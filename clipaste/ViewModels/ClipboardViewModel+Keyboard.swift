@@ -55,7 +55,9 @@ extension ClipboardViewModel {
     }
 
     var reservedSearchModifierFlags: NSEvent.ModifierFlags {
-        quickPasteModifier.eventFlags.union(plainTextModifier.eventFlags)
+        quickPasteModifier.eventFlags
+            .union(plainTextModifier.eventFlags)
+            .union(previewModifier.eventFlags)
     }
 
     func shouldStartTypeToSearch(with event: NSEvent) -> Bool {
@@ -117,6 +119,11 @@ extension ClipboardViewModel {
             plainTextModifier = updatedPlainTextModifier
         }
 
+        let updatedPreviewModifier = ModifierKey.previewPreference()
+        if previewModifier != updatedPreviewModifier {
+            previewModifier = updatedPreviewModifier
+        }
+
         updateModifierFlags(from: currentModifierFlags)
     }
 
@@ -132,6 +139,14 @@ extension ClipboardViewModel {
         if isPlainTextModifierHeld != plainTextHeld {
             isPlainTextModifierHeld = plainTextHeld
         }
+
+        let previewHeld = currentModifierFlags.contains(previewModifier.eventFlags)
+        if isPreviewModifierHeld != previewHeld {
+            isPreviewModifierHeld = previewHeld
+            if previewHeld == false {
+                dismissAutoPreviewIfNeeded()
+            }
+        }
     }
 
     func resetModifierTracking() {
@@ -141,6 +156,9 @@ extension ClipboardViewModel {
         }
         if isPlainTextModifierHeld {
             isPlainTextModifierHeld = false
+        }
+        if isPreviewModifierHeld {
+            isPreviewModifierHeld = false
         }
     }
 

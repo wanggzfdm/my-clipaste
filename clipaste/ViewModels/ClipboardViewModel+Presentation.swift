@@ -17,11 +17,8 @@ extension ClipboardViewModel {
         guard wasAlreadyActive == false else { return }
 
         if hasPreparedPanelData == false {
-            hasPreparedPanelData = true
-            hydrateFromWarmCacheIfAvailable()
             shouldResetSelectionToFirstDisplayedItem = true
-            loadData(mode: .visibleFirst)
-            loadCustomGroups()
+            preparePanelDataIfNeeded()
             return
         }
 
@@ -29,6 +26,36 @@ extension ClipboardViewModel {
         needsReloadOnNextPresentation = false
         shouldResetSelectionToFirstDisplayedItem = true
         loadData(mode: .fullRefresh)
+        loadCustomGroups()
+    }
+
+    func preparePanelDataIfNeeded() {
+        guard hasPreparedPanelData == false else { return }
+
+        hasPreparedPanelData = true
+        hydrateFromWarmCacheIfAvailable()
+        loadData(mode: .visibleFirst)
+        loadCustomGroups()
+    }
+
+    func refreshFirstHistoryPageForPresentation() async {
+        preparePanelDataIfNeeded()
+
+        dataLoadGeneration &+= 1
+        let generation = dataLoadGeneration
+        historyLoadTask?.cancel()
+
+        let firstPage = await StorageManager.shared.fetchItemsPage(
+            searchText: "",
+            fetchLimit: Self.initialVisibleItemBatchSize,
+            offset: 0
+        )
+
+        applyInitialHistoryPage(
+            firstPage,
+            generation: generation,
+            mode: .visibleFirst
+        )
         loadCustomGroups()
     }
 

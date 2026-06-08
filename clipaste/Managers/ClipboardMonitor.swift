@@ -46,6 +46,20 @@ final class ClipboardMonitor {
         cancelMonitoringLoop()
     }
 
+    func captureCurrentPasteboardIfNeeded() async {
+        let changeCount = pasteboard.changeCount
+        guard changeCount != lastChangeCount else { return }
+
+        if isIgnoredNextChange {
+            isIgnoredNextChange = false
+            lastChangeCount = changeCount
+            return
+        }
+
+        lastChangeCount = changeCount
+        await persistCurrentPasteboardItems()
+    }
+
     private func observePreferences() {
         defaultsObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification,
@@ -136,6 +150,32 @@ final class ClipboardMonitor {
     }
 
     private func processPasteboardItems() {
+        guard let capture = capturedPasteboardPayloads() else { return }
+
+        Task.detached(priority: .utility) {
+            await Self.persistCapturedPayloads(
+                recordPayloads: capture.recordPayloads,
+                imagePayloads: capture.imagePayloads,
+                sourceAppIconData: capture.sourceAppIconData
+            )
+        }
+    }
+
+    private func persistCurrentPasteboardItems() async {
+        guard let capture = capturedPasteboardPayloads() else { return }
+
+        await Self.persistCapturedPayloads(
+            recordPayloads: capture.recordPayloads,
+            imagePayloads: capture.imagePayloads,
+            sourceAppIconData: capture.sourceAppIconData
+        )
+    }
+
+    private func capturedPasteboardPayloads() -> (
+        recordPayloads: [ClipboardRecordPayload],
+        imagePayloads: [ClipboardImagePayload],
+        sourceAppIconData: Data?
+    )? {
         let sourceApplication = NSWorkspace.shared.frontmostApplication
         let appID = sourceApplication?.bundleIdentifier
         let appName = sourceApplication?.localizedName
@@ -145,10 +185,10 @@ final class ClipboardMonitor {
         let captureMethodRawValue = ClipboardSourceMetadata.macOSMonitorMethod
 
         if let appID, ignoredBundleIdentifiers.contains(appID) {
-            return
+            return nil
         }
 
-        guard let pasteboardItems = pasteboard.pasteboardItems, !pasteboardItems.isEmpty else { return }
+        guard let pasteboardItems = pasteboard.pasteboardItems, !pasteboardItems.isEmpty else { return nil }
         var recordPayloads: [ClipboardRecordPayload] = []
         var imagePayloads: [ClipboardImagePayload] = []
 
@@ -214,16 +254,10 @@ final class ClipboardMonitor {
         }
 
         guard imagePayloads.isEmpty == false || recordPayloads.isEmpty == false else {
-            return
+            return nil
         }
 
-        Task.detached(priority: .utility) {
-            await Self.persistCapturedPayloads(
-                recordPayloads: recordPayloads,
-                imagePayloads: imagePayloads,
-                sourceAppIconData: sourceAppIconData
-            )
-        }
+        return (recordPayloads, imagePayloads, sourceAppIconData)
     }
 
     private func makeFileURLPayload(
@@ -370,7 +404,7 @@ final class ClipboardMonitor {
         }
 
         for recordPayload in recordPayloads {
-            persistRecordPayload(
+            await persistRecordPayload(
                 recordPayload,
                 appIconDominantColorHex: appIconDominantColorHex,
                 appIconData: sourceAppIconData
@@ -391,7 +425,7 @@ final class ClipboardMonitor {
         let imageMetadata = ImageProcessor.metadata(for: payload.data)
         let recordExists = await StorageManager.shared.recordExists(hash: contentHash)
 
-        StorageManager.shared.upsertRecord(
+        await StorageManager.shared.upsertRecordAndWait(
             hash: contentHash,
             text: nil,
             appID: payload.appID,
@@ -419,8 +453,8 @@ final class ClipboardMonitor {
         _ payload: ClipboardRecordPayload,
         appIconDominantColorHex: String?,
         appIconData: Data?
-    ) {
-        StorageManager.shared.upsertRecord(
+    ) async {
+        await StorageManager.shared.upsertRecordAndWait(
             hash: payload.hash,
             text: payload.text,
             appID: payload.appID,

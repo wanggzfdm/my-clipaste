@@ -6,7 +6,7 @@ struct ClipboardVerticalListView: View {
     @FocusState var focusedField: ClipboardPanelFocusField?
     @AppStorage("clipboardLayout") private var clipboardLayout: AppLayoutMode = .horizontal
     @AppStorage("previewPanelMode") private var previewPanelMode: PreviewPanelMode = .disabled
-    @AppStorage("autoPreview") private var autoPreview = true
+    @AppStorage("autoPreview") private var autoPreview = false
 
     @State private var previewPanelViewModel = ClipboardPreviewPanelViewModel()
     @State private var quickPasteIndexesByItemID: [UUID: Int] = [:]
@@ -24,11 +24,11 @@ struct ClipboardVerticalListView: View {
     }
 
     private var shouldAutoPreview: Bool {
-        clipboardLayout == .vertical && isPreviewEnabled && autoPreview
+        clipboardLayout == .vertical && isPreviewEnabled && autoPreview && viewModel.isPreviewModifierHeld
     }
 
     private var shouldUseQuickLookAutoPreview: Bool {
-        clipboardLayout == .vertical && autoPreview && !isPreviewEnabled
+        clipboardLayout == .vertical && autoPreview && viewModel.isPreviewModifierHeld && !isPreviewEnabled
     }
 
     private var itemSpacing: CGFloat {
@@ -58,7 +58,7 @@ struct ClipboardVerticalListView: View {
                     ))
             }
         }
-        .animation(.spring(response: previewAnimationDuration, dampingFraction: 0.85), value: previewPanelViewModel.selectedItem?.id)
+        .animation(.easeOut(duration: 0.08), value: previewPanelViewModel.selectedItem?.id)
         .onChange(of: viewModel.selectedItemIDs) { _, _ in
             previewPanelViewModel.handleSelectionChange(
                 items: items,
@@ -87,6 +87,16 @@ struct ClipboardVerticalListView: View {
             )
         }
         .onChange(of: autoPreview) { _, _ in
+            previewPanelViewModel.handlePreviewModeChange(
+                items: items,
+                selectedItemIDs: viewModel.selectedItemIDs,
+                isPreviewEnabled: shouldAutoPreview
+            )
+            viewModel.presentAutoPreviewForSelectionIfNeeded(
+                isEnabled: shouldUseQuickLookAutoPreview
+            )
+        }
+        .onChange(of: viewModel.isPreviewModifierHeld) { _, _ in
             previewPanelViewModel.handlePreviewModeChange(
                 items: items,
                 selectedItemIDs: viewModel.selectedItemIDs,

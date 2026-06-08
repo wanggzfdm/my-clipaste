@@ -59,11 +59,17 @@ private extension ShortcutsSettingsView {
                 suffix: "",
                 selection: $viewModel.plainTextModifier
             )
+
+            ModifierPickerView(
+                title: "Preview",
+                suffix: "",
+                selection: $viewModel.previewModifier
+            )
         } header: {
             SettingsSectionHeader(title: "Modifier Keys")
         } footer: {
             SettingsSectionFooter {
-                Text("Hold the quick paste modifier to reveal 1…9 shortcuts. Hold the plain text modifier while copying or pasting to strip formatting.")
+                Text("Hold the quick paste modifier to reveal 1…9 shortcuts. Hold the plain text modifier while copying or pasting to strip formatting. Hold the preview modifier to trigger preview.")
             }
         }
     }

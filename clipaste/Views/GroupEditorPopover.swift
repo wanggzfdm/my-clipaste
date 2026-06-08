@@ -93,7 +93,7 @@ struct GroupEditorPopover: View {
             }
         }
         .buttonStyle(.plain)
-        .help("Choose Icon")
+        .help("选择图标")
         .popover(isPresented: $viewModel.isIconPickerPresented) {
             GroupIconPicker(
                 selectedIcon: Binding(

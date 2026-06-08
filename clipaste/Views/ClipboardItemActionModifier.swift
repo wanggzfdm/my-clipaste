@@ -1,11 +1,11 @@
 import SwiftUI
 
-// MARK: - Click Paste Behavior Modifier
+// MARK: - Click Behavior Modifier
 
 struct ClipboardItemActionModifier: ViewModifier {
     let item: ClipboardItem
     @ObservedObject var viewModel: ClipboardViewModel
-    @AppStorage("singleClickPaste") private var singleClickPaste = false
+    @AppStorage("singleClickPaste") private var singleClickPaste = true
 
     func body(content: Content) -> some View {
         content
@@ -20,7 +20,7 @@ struct ClipboardItemActionModifier: ViewModifier {
 }
 
 extension View {
-    /// Attach the configured click/paste behavior to any clipboard card.
+    /// Attach the configured click behavior to any clipboard card.
     func clipboardItemActions(for item: ClipboardItem, viewModel: ClipboardViewModel) -> some View {
         self.modifier(ClipboardItemActionModifier(item: item, viewModel: viewModel))
     }
@@ -32,7 +32,7 @@ extension View {
 struct ClipboardCardActionModifier: ViewModifier {
     let item: ClipboardItem
     @ObservedObject var viewModel: ClipboardViewModel
-    @AppStorage("singleClickPaste") private var singleClickPaste = false
+    @AppStorage("singleClickPaste") private var singleClickPaste = true
 
     func body(content: Content) -> some View {
         content
@@ -51,10 +51,21 @@ private struct ClipboardItemTapBehaviorModifier: ViewModifier {
     let singleClickPaste: Bool
 
     func body(content: Content) -> some View {
-        if singleClickPaste {
+        if item.isObsidianSearchResult {
             content
                 .simultaneousGesture(TapGesture().onEnded {
-                    viewModel.pasteToActiveApp(item: item)
+                    viewModel.handlePrimaryClickSelection(for: item.id)
+                })
+                .simultaneousGesture(TapGesture(count: 2).onEnded {
+                    viewModel.openInObsidian(item: item)
+                })
+        } else if singleClickPaste {
+            content
+                .simultaneousGesture(TapGesture().onEnded {
+                    viewModel.copyToClipboard(item: item)
+                })
+                .simultaneousGesture(TapGesture(count: 2).onEnded {
+                    viewModel.pasteToActiveApp(item: item, forceAutoPaste: true)
                 })
         } else {
             content
@@ -64,7 +75,7 @@ private struct ClipboardItemTapBehaviorModifier: ViewModifier {
                     viewModel.handlePrimaryClickSelection(for: item.id)
                 })
                 .simultaneousGesture(TapGesture(count: 2).onEnded {
-                    viewModel.pasteToActiveApp(item: item)
+                    viewModel.pasteToActiveApp(item: item, forceAutoPaste: true)
                 })
         }
     }

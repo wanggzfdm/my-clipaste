@@ -5,12 +5,14 @@ struct ClipboardCardView: View {
     let item: ClipboardItem
     @ObservedObject var viewModel: ClipboardViewModel
     var quickPasteIndex: Int? = nil
+    
+    @Environment(\.shouldDisableAnimations) private var shouldDisableAnimations
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var isHovered = false
     @State private var richPreviewText: AttributedString?
-    @State private var appIconDominantColorHex: String?
     @AppStorage("appAccentColor") private var appAccentColor: AppAccentColor = .defaultValue
-    @AppStorage("autoPreview") private var autoPreview = true
+    @AppStorage("autoPreview") private var autoPreview = false
 
     private var isSelected: Bool {
         viewModel.selectedItemIDs.contains(item.id)
@@ -31,43 +33,93 @@ struct ClipboardCardView: View {
         quickPasteNumber != nil && viewModel.isQuickPasteModifierHeld
     }
 
+    private var shouldTriggerPreview: Bool {
+        autoPreview && viewModel.isPreviewModifierHeld
+    }
+
     private var richTextTaskKey: String {
         "\(item.id.uuidString)-\(item.contentHash)-\(item.hasRTF)"
     }
 
-    private var headerColorTaskKey: String {
-        "\(item.id.uuidString)-\(item.contentHash)-\(item.timestamp.timeIntervalSince1970)"
-    }
-
-    private var headerBaseColor: Color {
-        if let storedColor = Color(clipasteHex: appIconDominantColorHex) {
-            return storedColor
-        }
-
-        if let iconColorHex = resolvedAppIcon?.dominantColorHex(),
-           let iconColor = Color(clipasteHex: iconColorHex) {
-            return iconColor
-        }
-
-        return Color(nsColor: .darkGray)
+    private var headerTextColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.96) : Color.primary.opacity(0.88)
     }
 
     private var headerTimestampText: String {
         "\(item.timestamp.dateString) \(item.timestamp.timeString)"
     }
 
-    private var headerShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            topLeadingRadius: 16,
-            bottomLeadingRadius: 0,
-            bottomTrailingRadius: 0,
-            topTrailingRadius: 16,
-            style: .continuous
+    private var timestampHelpText: String {
+        item.timestamp.formatted(
+            .dateTime
+                .locale(Locale(identifier: "zh-Hans"))
+                .year()
+                .month(.wide)
+                .day()
+                .weekday(.wide)
+                .hour()
+                .minute()
+                .second()
         )
     }
 
     private var headerHeight: CGFloat {
-        52
+        54
+    }
+
+    private enum Layout {
+        static let baseCardSize: CGFloat = 252
+        static let cardScale: CGFloat = 0.98
+        static let cardSize = baseCardSize * cardScale
+    }
+
+    private var cardCornerRadius: CGFloat {
+        25
+    }
+
+    private var sourceAccentColor: Color {
+        ClipboardCardSourcePalette.color(
+            storedHex: item.appIconDominantColorHex,
+            image: resolvedAppIcon,
+            fallback: appAccentColor.color
+        )
+    }
+
+    private var cardSurfaceColor: Color {
+        (colorScheme == .dark ? Color.black : Color(nsColor: .windowBackgroundColor))
+            .opacity(colorScheme == .dark ? 0.78 : 0.58)
+    }
+
+    private var headerSurfaceColor: Color {
+        if colorScheme == .dark {
+            return sourceAccentColor.opacity(0.98)
+        }
+
+        return sourceAccentColor.opacity(0.96)
+    }
+
+    private var headerHighlightColor: Color {
+        Color.white.opacity(colorScheme == .dark ? 0.08 : 0.12)
+    }
+
+    private var headerDepthColor: Color {
+        Color.black.opacity(colorScheme == .dark ? 0.04 : 0.035)
+    }
+
+    private var primaryContentTextColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.94) : Color.primary.opacity(0.9)
+    }
+
+    private var cardBorderColor: Color {
+        isSelected
+            ? sourceAccentColor.opacity(0.72)
+            : Color.primary.opacity(colorScheme == .dark ? (isHovered ? 0.16 : 0.08) : (isHovered ? 0.14 : 0.07))
+    }
+
+    private var cardShadowColor: Color {
+        isSelected
+            ? sourceAccentColor.opacity(colorScheme == .dark ? 0.18 : 0.12)
+            : Color.black.opacity(colorScheme == .dark ? 0.24 : 0.11)
     }
 
     private var resolvedAppIcon: NSImage? {
@@ -87,18 +139,44 @@ struct ClipboardCardView: View {
         VStack(alignment: .leading, spacing: 0) {
             cardHeader
 
+            contentBody
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 13)
+                .padding(.top, 8)
+                .padding(.bottom, 13)
+        }
+        .frame(width: Layout.cardSize, height: Layout.cardSize)
+        .background {
             ZStack {
-                Color(nsColor: .textBackgroundColor)
+                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
 
-                contentBody
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 12)
-                    .padding(.bottom, 12)
+                cardSurfaceColor
+
+                if isSelected {
+                    sourceAccentColor.opacity(colorScheme == .dark ? 0.08 : 0.06)
+                }
+
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(colorScheme == .dark ? 0.035 : 0.22),
+                        Color.white.opacity(colorScheme == .dark ? 0.012 : 0.09),
+                        Color.clear
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
             }
         }
-        .frame(width: 240, height: 240)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .overlay {
+            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
+                .stroke(
+                    cardBorderColor,
+                    lineWidth: isSelected ? 1.5 : 0.8
+                )
+        }
+        .clipShape(.rect(cornerRadius: cardCornerRadius, style: .continuous))
+        .shadow(color: cardShadowColor, radius: isSelected ? 14 : 9, x: 0, y: 5)
+        .animation(nil, value: showsQuickPasteBadge)
         .background {
             if let quickPasteIndex {
                 QuickPasteShortcutHost(
@@ -112,16 +190,6 @@ struct ClipboardCardView: View {
         .overlay(alignment: .bottomTrailing) {
             bottomAccessory
         }
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(
-                    isSelected ? appAccentColor.color.opacity(0.95) : Color.black.opacity(0.08),
-                    lineWidth: isSelected ? 6 : 0.8
-                )
-        }
-        .clipShape(.rect(cornerRadius: 16))
-        .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 3)
-        .animation(.easeInOut(duration: 0.15), value: showsQuickPasteBadge)
         // 空格键 QuickLook 气泡（箭头朝下，挂在卡片顶部）
         .popover(
             isPresented: Binding(
@@ -141,16 +209,34 @@ struct ClipboardCardView: View {
         .task(id: richTextTaskKey) {
             await refreshRichPreviewText()
         }
-        .task(id: headerColorTaskKey) {
-            await refreshHeaderDominantColorHex()
-        }
         .clipboardContextMenu(for: item, viewModel: viewModel)
         .onHover { hovering in
-            isHovered = hovering
+            if shouldDisableAnimations {
+                isHovered = hovering
+            } else {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.9, blendDuration: 0.1)) {
+                    isHovered = hovering
+                }
+            }
+
             viewModel.handleAutoPreviewHover(
                 for: item,
                 isHovering: hovering,
-                isEnabled: autoPreview
+                isEnabled: shouldTriggerPreview
+            )
+        }
+        .onChange(of: viewModel.isPreviewModifierHeld) { _, _ in
+            viewModel.handleAutoPreviewHover(
+                for: item,
+                isHovering: isHovered,
+                isEnabled: shouldTriggerPreview
+            )
+        }
+        .onChange(of: autoPreview) { _, _ in
+            viewModel.handleAutoPreviewHover(
+                for: item,
+                isHovering: isHovered,
+                isEnabled: shouldTriggerPreview
             )
         }
         .onDrag {
@@ -163,37 +249,55 @@ struct ClipboardCardView: View {
     }
 
     private var cardHeader: some View {
-        HStack(alignment: .center, spacing: 0) {
-            AppIconView(appBundleID: item.sourceBundleIdentifier, size: headerHeight)
-                .clipShape(.rect(cornerRadius: 10))
-                .shadow(color: Color.black.opacity(0.18), radius: 2, x: 0, y: 1)
-
-            Spacer(minLength: 12)
-
-            VStack(alignment: .trailing, spacing: 2) {
+        ZStack(alignment: .topTrailing) {
+            HStack(alignment: .center, spacing: 8) {
                 Text(item.typeBadgeTitle())
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(headerTextColor)
                     .lineLimit(1)
+
+                Spacer(minLength: 0)
 
                 Text(headerTimestampText)
-                    .font(.caption)
-                    .foregroundStyle(Color.white.opacity(0.82))
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(headerTextColor.opacity(0.76))
                     .lineLimit(1)
             }
-            .multilineTextAlignment(.trailing)
-            .fixedSize(horizontal: true, vertical: false)
-            .help(item.timestamp.formatted(date: .complete, time: .standard))
+            .padding(.leading, 14)
+            .padding(.trailing, 64)
+            .frame(height: headerHeight)
+            .background {
+                ZStack {
+                    headerSurfaceColor
+
+                    LinearGradient(
+                        colors: [
+                            headerHighlightColor,
+                            sourceAccentColor.opacity(colorScheme == .dark ? 0.10 : 0.08),
+                            headerDepthColor
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+            }
+            .help(timestampHelpText)
+
+            AppIconView(appBundleID: item.sourceBundleIdentifier, size: 50)
+                .clipShape(.rect(cornerRadius: 14, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.white.opacity(colorScheme == .dark ? 0.16 : 0.22), lineWidth: 0.8)
+                }
+                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.14 : 0.10), radius: 4, x: 0, y: 1)
+                .padding(.top, 6)
+                .padding(.trailing, 10)
         }
-        .padding(.leading, 8)
-        .padding(.trailing, 12)
         .frame(height: headerHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(headerBaseColor)
-        .clipShape(headerShape)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(Color.white.opacity(0.10))
+                .fill(Color.black.opacity(colorScheme == .dark ? 0.10 : 0.08))
                 .frame(height: 0.5)
         }
         .overlay(alignment: .leading) {
@@ -235,7 +339,7 @@ struct ClipboardCardView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help(Text("AI"))
+            .help(Text("AI 功能"))
             .padding(.trailing, 12)
             .padding(.bottom, 12)
             .transition(.opacity.combined(with: .scale(scale: 0.96)))
@@ -252,7 +356,7 @@ struct ClipboardCardView: View {
             if item.fileRepresentsImage {
                 ZStack {
                     CheckerboardBackground()
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                     ClipboardFileThumbnailView(fileURL: fileURL, maxPixelSize: 480) {
                         Image(nsImage: NSWorkspace.shared.icon(forFile: displayPath))
@@ -278,7 +382,7 @@ struct ClipboardCardView: View {
                             .multilineTextAlignment(.center)
                         Text(displayPath)
                             .font(.system(size: 10))
-                            .foregroundColor(.secondary)
+                            .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .truncationMode(.middle)
                             .multilineTextAlignment(.center)
@@ -290,7 +394,7 @@ struct ClipboardCardView: View {
             // ── 图片：等比例完整显示，绝不裁切原图 ──────────────────────
             ZStack {
                 CheckerboardBackground()
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                 ClipboardThumbnailView(itemID: item.id, maxPixelSize: 480) {
                     Group {
@@ -301,7 +405,7 @@ struct ClipboardCardView: View {
                         } else {
                             Image(systemName: "photo")
                                 .font(.title2)
-                                .foregroundColor(.secondary.opacity(0.8))
+                                .foregroundStyle(.secondary.opacity(0.8))
                         }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -317,7 +421,7 @@ struct ClipboardCardView: View {
                     .foregroundColor(parsedColor.isDark ? .white : .black)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .cornerRadius(8)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         } else if item.isFastLink {
             switch viewModel.settingsViewModel.linkDisplayMode {
             case .rich:
@@ -335,20 +439,21 @@ struct ClipboardCardView: View {
             // ── 普通文本（含代码）：▄▀ ListRenderEngine 缓存优先
             if let richPreviewText {
                 Text(richPreviewText)
+                    .foregroundStyle(primaryContentTextColor)
                     .lineSpacing(3)
-                    .lineLimit(8)
+                    .lineLimit(10)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 HighlightedText(
                     text: previewText,
                     highlight: searchHighlight,
-                    font: .system(size: 12, design: isCodeContent ? .monospaced : .default),
-                    foregroundColor: .primary.opacity(0.85),
-                    highlightFont: .system(size: 12, weight: .bold, design: isCodeContent ? .monospaced : .default)
+                    font: .system(size: 13, design: isCodeContent ? .monospaced : .default),
+                    foregroundColor: primaryContentTextColor,
+                    highlightFont: .system(size: 13, weight: .bold, design: isCodeContent ? .monospaced : .default)
                 )
                 .lineSpacing(3)
-                .lineLimit(8)
+                .lineLimit(10)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
@@ -377,19 +482,14 @@ struct ClipboardCardView: View {
                     item: item,
                     viewModel: viewModel,
                     font: .system(size: 11, weight: .semibold),
-                    textColor: .white.opacity(0.96)
+                    textColor: headerTextColor.opacity(0.96)
                 )
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.leading, headerHeight + 10)
-            .padding(.trailing, 76)
+            .padding(.leading, 12)
+            .padding(.trailing, 56)
             .padding(.bottom, 8)
         }
-    }
-
-    @MainActor
-    private func refreshHeaderDominantColorHex() async {
-        appIconDominantColorHex = await StorageManager.shared.loadAppIconDominantColorHex(id: item.id)
     }
 
     @MainActor
@@ -400,27 +500,12 @@ struct ClipboardCardView: View {
             return
         }
 
-        richPreviewText = await ListRenderEngine.shared.prepareText(for: item)
-    }
-}
-
-private extension Color {
-    init?(clipasteHex hex: String?) {
-        guard let hex else { return nil }
-
-        let sanitized = hex
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "#", with: "")
-
-        guard sanitized.count == 6, let value = UInt64(sanitized, radix: 16) else {
-            return nil
+        try? await Task.sleep(nanoseconds: 90_000_000)
+        guard !Task.isCancelled else {
+            return
         }
 
-        self = Color(
-            red: Double((value & 0xFF0000) >> 16) / 255.0,
-            green: Double((value & 0x00FF00) >> 8) / 255.0,
-            blue: Double(value & 0x0000FF) / 255.0
-        )
+        richPreviewText = await ListRenderEngine.shared.prepareText(for: item)
     }
 }
 
@@ -428,9 +513,21 @@ private extension Color {
 
 /// 经典灰白棋盘格 — 透明图片可视化底色
 private struct CheckerboardBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let cellSize: CGFloat = 8
-    let lightColor = Color.white.opacity(0.8)
-    let darkColor = Color.gray.opacity(0.15)
+
+    private var lightColor: Color {
+        colorScheme == .dark
+            ? Color(nsColor: NSColor(calibratedWhite: 0.16, alpha: 0.85))
+            : Color.white.opacity(0.8)
+    }
+
+    private var darkColor: Color {
+        colorScheme == .dark
+            ? Color(nsColor: NSColor(calibratedWhite: 0.09, alpha: 0.90))
+            : Color.gray.opacity(0.15)
+    }
 
     var body: some View {
         Canvas { context, size in
@@ -446,6 +543,114 @@ private struct CheckerboardBackground: View {
                 }
             }
         }
+    }
+}
+
+private enum ClipboardCardSourcePalette {
+    private static let cache = NSCache<NSString, NSColor>()
+    private static let paletteVersion = "paste-palette-v3"
+
+    static func color(storedHex: String?, image: NSImage?, fallback: Color) -> Color {
+        let sourceKey = storedHex ?? image.map { String(ObjectIdentifier($0).hashValue) } ?? "fallback"
+        let cacheKey = "\(paletteVersion)-\(sourceKey)"
+
+        if let cached = cache.object(forKey: cacheKey as NSString) {
+            return Color(nsColor: cached)
+        }
+
+        guard let nsColor = resolvedColor(storedHex: storedHex, image: image) else {
+            return fallback
+        }
+
+        cache.setObject(nsColor, forKey: cacheKey as NSString)
+        return Color(nsColor: nsColor)
+    }
+
+    private static func resolvedColor(storedHex: String?, image: NSImage?) -> NSColor? {
+        if let color = storedHex.flatMap(parseHexColor(_:)) {
+            return normalizedHeaderColor(from: color)
+        }
+
+        guard let image,
+              let extractedHex = image.dominantColorHex(),
+              let color = parseHexColor(extractedHex) else {
+            return nil
+        }
+
+        return normalizedHeaderColor(from: color)
+    }
+
+    private static func parseHexColor(_ hex: String) -> NSColor? {
+        let trimmed = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#").union(.whitespacesAndNewlines))
+        guard trimmed.count == 6, let value = UInt32(trimmed, radix: 16) else {
+            return nil
+        }
+
+        return NSColor(
+            srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: 1
+        )
+    }
+
+    private static func normalizedHeaderColor(from color: NSColor) -> NSColor {
+        let srgb = color.usingColorSpace(.sRGB) ?? color
+        var hue: CGFloat = 0
+        var saturation: CGFloat = 0
+        var brightness: CGFloat = 0
+        var alpha: CGFloat = 0
+        srgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+
+        if saturation < 0.12 {
+            let gray = min(max(brightness, 0.52), 0.62)
+            return NSColor(srgbRed: gray, green: gray, blue: gray, alpha: 1)
+        }
+
+        let target = targetHSB(forHue: hue, saturation: saturation, brightness: brightness)
+        return NSColor(
+            hue: hue,
+            saturation: target.saturation,
+            brightness: target.brightness,
+            alpha: 1
+        )
+    }
+
+    private static func targetHSB(
+        forHue hue: CGFloat,
+        saturation originalSaturation: CGFloat,
+        brightness originalBrightness: CGFloat
+    ) -> (saturation: CGFloat, brightness: CGFloat) {
+        let isGreen = (0.24...0.45).contains(hue)
+        let isCyanBlue = (0.46...0.64).contains(hue)
+        let isPurple = (0.65...0.80).contains(hue)
+        let isRedOrOrange = hue >= 0.94 || hue <= 0.12
+
+        let saturationRange: ClosedRange<CGFloat>
+        let brightnessRange: ClosedRange<CGFloat>
+
+        switch true {
+        case isGreen:
+            saturationRange = 0.82...0.94
+            brightnessRange = 0.76...0.86
+        case isCyanBlue:
+            saturationRange = 0.78...0.90
+            brightnessRange = 0.82...0.92
+        case isPurple:
+            saturationRange = 0.64...0.78
+            brightnessRange = 0.72...0.84
+        case isRedOrOrange:
+            saturationRange = 0.72...0.86
+            brightnessRange = 0.80...0.90
+        default:
+            saturationRange = 0.68...0.84
+            brightnessRange = 0.76...0.88
+        }
+
+        return (
+            saturation: min(max(originalSaturation, saturationRange.lowerBound), saturationRange.upperBound),
+            brightness: min(max(originalBrightness, brightnessRange.lowerBound), brightnessRange.upperBound)
+        )
     }
 }
 

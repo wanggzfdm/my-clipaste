@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import NaturalLanguage
 
 /// Preview panel that shows full content of a clipboard item when hovered/focused
 /// in the vertical list layout.
@@ -7,6 +8,7 @@ struct ClipboardItemPreviewView: View {
     let item: ClipboardItem
 
     @AppStorage("clipboardLayout") private var clipboardLayout: AppLayoutMode = .horizontal
+    @State private var translationState: PreviewTranslationState = .idle
 
     private var isCompact: Bool {
         clipboardLayout == .compact
@@ -68,6 +70,9 @@ struct ClipboardItemPreviewView: View {
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.12), radius: 12, y: 4)
+        .task(id: item.id) {
+            await refreshPreviewTranslation()
+        }
     }
     
     // MARK: - Header View
@@ -146,6 +151,8 @@ struct ClipboardItemPreviewView: View {
                     font: .system(size: isCompact ? 13 : 15, design: .default),
                     lineSpacing: isCompact ? 4 : 6
                 )
+
+                translationView
 
                 // Metadata
                 metadataView(textLength: rawText.utf8.count)
@@ -280,48 +287,16 @@ struct ClipboardItemPreviewView: View {
     
     @ViewBuilder
     private var linkContentView: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Title if available
-            if let title = item.linkTitle, !title.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.system(size: isCompact ? 14 : 16, weight: .semibold))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    wrappedContentText(
-                        item.textPreview,
-                        font: .system(size: isCompact ? 11 : 12),
-                        foregroundStyle: .secondary
-                    )
-                }
-            } else {
-                wrappedContentText(
-                    item.textPreview,
-                    font: .system(size: isCompact ? 13 : 14),
-                    foregroundStyle: .blue
-                )
-            }
-
-            Spacer(minLength: 8)
-
-            // URL in a styled container
-            HStack(spacing: 6) {
-                Image(systemName: "globe")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-
-                wrappedContentText(
-                    item.textPreview,
-                    font: .system(size: isCompact ? 10 : 11, design: .monospaced),
-                    foregroundStyle: .secondary
-                )
-            }
-            .padding(10)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.primary.opacity(0.04))
-            )
-        }
+        ClipboardLinkPreviewCardView(
+            viewModel: ClipboardLinkPreviewViewModel(item: item),
+            highlight: ""
+        )
+        .padding(isCompact ? 2 : 4)
+        .frame(
+            minHeight: isCompact ? 120 : 150,
+            maxHeight: .infinity,
+            alignment: .topLeading
+        )
     }
     
     // MARK: - Code Content
@@ -380,6 +355,74 @@ struct ClipboardItemPreviewView: View {
     }
 
     @ViewBuilder
+    private var translationView: some View {
+        switch translationState {
+        case .idle, .skipped:
+            EmptyView()
+        case .unavailable(let message):
+            Label(message, systemImage: "sparkles")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        case .translating:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+
+                Text("Translating preview…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 2)
+        case .translated(let text):
+            VStack(alignment: .leading, spacing: 8) {
+                Label("翻译", systemImage: "character.bubble")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                wrappedContentText(
+                    text,
+                    font: .system(size: isCompact ? 13 : 15, design: .default),
+                    lineSpacing: isCompact ? 4 : 6
+                )
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        case .failed(let message):
+            Label(message, systemImage: "exclamationmark.triangle")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @MainActor
+    private func refreshPreviewTranslation() async {
+        translationState = .idle
+
+        guard let request = PreviewAutoTranslationRequest(item: item) else {
+            translationState = .skipped
+            return
+        }
+
+        guard let configuration = PreviewAutoTranslator.activeConfiguration else {
+            translationState = .unavailable(String(localized: "No active AI configuration is available."))
+            return
+        }
+
+        translationState = .translating
+
+        do {
+            let translated = try await PreviewAutoTranslator.translate(request.text, configuration: configuration)
+            guard Task.isCancelled == false else { return }
+            translationState = .translated(translated)
+        } catch {
+            guard Task.isCancelled == false else { return }
+            translationState = .failed(error.localizedDescription)
+        }
+    }
+
+    @ViewBuilder
     private var emptyContentPlaceholder: some View {
         VStack(spacing: 12) {
             Image(systemName: "doc.questionmark")
@@ -395,13 +438,151 @@ struct ClipboardItemPreviewView: View {
     }
 }
 
+private enum PreviewTranslationState: Equatable {
+    case idle
+    case skipped
+    case unavailable(String)
+    case translating
+    case translated(String)
+    case failed(String)
+}
+
+private struct PreviewAutoTranslationRequest {
+    let text: String
+
+    init?(item: ClipboardItem) {
+        guard item.contentType == .text, item.hasRTF == false else {
+            return nil
+        }
+
+        let text = (item.rawText ?? item.previewText ?? item.textPreview)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard PreviewAutoTranslator.shouldTranslate(text) else {
+            return nil
+        }
+
+        self.text = text
+    }
+}
+
+private enum PreviewAutoTranslator {
+    static var activeConfiguration: AIConfiguration? {
+        let settings = AISettingsViewModel.shared
+        guard settings.isAIEnabled else { return nil }
+        return settings.activeConfiguration
+    }
+
+    static func translate(_ text: String, configuration: AIConfiguration) async throws -> String {
+        let prompt = """
+        Translate the following plain text into Simplified Chinese. If it is a single word, provide the most common Simplified Chinese translation. Preserve URLs, email addresses, code-like identifiers, names, and paragraph breaks. Output only the translation.
+
+        \(text)
+        """
+
+        return try await AIExecutionService.shared.send(
+            messages: [AIChatMessage(role: "user", content: prompt)],
+            configuration: configuration
+        )
+    }
+
+    static func shouldTranslate(_ text: String) -> Bool {
+        guard text.isEmpty == false,
+              text.count <= 5_000,
+              isSimplifiedChinese(text) == false,
+              isLikelyStructuredOrCode(text) == false else {
+            return false
+        }
+
+        return isSingleWord(text) || isLikelyNaturalLanguage(text)
+    }
+
+    private static func isSimplifiedChinese(_ text: String) -> Bool {
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(text)
+
+        if recognizer.dominantLanguage == .simplifiedChinese {
+            return true
+        }
+
+        let hypotheses = recognizer.languageHypotheses(withMaximum: 3)
+        return (hypotheses[.simplifiedChinese] ?? 0) >= 0.45
+    }
+
+    private static func isSingleWord(_ text: String) -> Bool {
+        guard text.contains(where: \.isWhitespace) == false,
+              text.unicodeScalars.count <= 64 else {
+            return false
+        }
+
+        return text.unicodeScalars.allSatisfy { scalar in
+            CharacterSet.letters.contains(scalar)
+                || CharacterSet.nonBaseCharacters.contains(scalar)
+                || scalar == "'"
+                || scalar == "-"
+                || scalar == "’"
+        }
+    }
+
+    private static func isLikelyNaturalLanguage(_ text: String) -> Bool {
+        let scalars = text.unicodeScalars
+        let meaningfulScalars = scalars.filter { CharacterSet.whitespacesAndNewlines.contains($0) == false }
+        guard meaningfulScalars.count >= 8 else { return false }
+
+        let letterCount = meaningfulScalars.filter { CharacterSet.letters.contains($0) }.count
+        let letterRatio = Double(letterCount) / Double(meaningfulScalars.count)
+        guard letterRatio >= 0.45 else { return false }
+
+        let sentenceMarks = text.filter { ".!?。！？".contains($0) }.count
+        let wordSeparators = text.filter(\.isWhitespace).count
+        return sentenceMarks > 0 || wordSeparators > 0
+    }
+
+    private static func isLikelyStructuredOrCode(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowercased = trimmed.lowercased()
+
+        if lowercased.hasPrefix("http://") || lowercased.hasPrefix("https://") {
+            return true
+        }
+
+        if (trimmed.hasPrefix("{") && trimmed.hasSuffix("}"))
+            || (trimmed.hasPrefix("[") && trimmed.hasSuffix("]"))
+            || (trimmed.hasPrefix("<") && trimmed.hasSuffix(">")) {
+            return true
+        }
+
+        let codeNeedles = [
+            "func ", "let ", "var ", "class ", "struct ", "enum ", "import ",
+            "const ", "function ", "return ", "#include", "public ", "private "
+        ]
+        if codeNeedles.contains(where: { lowercased.contains($0) }) {
+            return true
+        }
+
+        let codeSymbolCount = trimmed.filter { "{}[]<>;=|`$".contains($0) }.count
+        return Double(codeSymbolCount) / Double(max(trimmed.count, 1)) > 0.08
+    }
+}
+
 // MARK: - Checkerboard Background
 
 /// Classic gray-white checkerboard pattern for transparent image visualization
 private struct CheckerboardBackground: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let cellSize: CGFloat = 10
-    let lightColor = Color.white.opacity(0.9)
-    let darkColor = Color.gray.opacity(0.2)
+
+    private var lightColor: Color {
+        colorScheme == .dark
+            ? Color(nsColor: NSColor(calibratedWhite: 0.16, alpha: 0.85))
+            : Color.white.opacity(0.9)
+    }
+
+    private var darkColor: Color {
+        colorScheme == .dark
+            ? Color(nsColor: NSColor(calibratedWhite: 0.09, alpha: 0.90))
+            : Color.gray.opacity(0.2)
+    }
     
     var body: some View {
         Canvas { context, size in

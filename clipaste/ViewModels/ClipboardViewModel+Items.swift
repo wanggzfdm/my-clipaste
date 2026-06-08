@@ -8,7 +8,7 @@ extension ClipboardViewModel {
 
     func item(for id: UUID) -> ClipboardItem? {
         guard let index = itemIndexByID[id], items.indices.contains(index) else {
-            return nil
+            return obsidianSearchItems.first { $0.id == id }
         }
 
         return items[index]

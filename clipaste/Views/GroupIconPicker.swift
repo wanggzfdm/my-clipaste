@@ -148,7 +148,7 @@ struct GroupIconPicker: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("No Icon")
+        .help("无图标")
     }
 }
 

@@ -14,6 +14,7 @@ class ClipboardPanelManager {
     private var layoutObserver: Any?
     private var pinObserver: Any?
     private var forceHideObserver: Any?
+    private let panelViewModel = ClipboardViewModel()
 
     /// Additional width to add when preview panel is active
     private let previewExpandedWidth: CGFloat = 380
@@ -26,6 +27,22 @@ class ClipboardPanelManager {
 
     /// Indicates whether the panel is currently visible to the user.
     private(set) var isVisible: Bool = false
+    private var isPreparingToShow = false
+
+    private struct ContentPresentationAnimation {
+        let layer: CALayer
+        let fromTransform: CATransform3D
+        let fromOpacity: Float
+        let duration: CFTimeInterval
+        let timing: CAMediaTimingFunction
+    }
+
+    private struct BottomPresentationAnimation {
+        let layer: CALayer
+        let fromTransform: CATransform3D
+        let duration: CFTimeInterval
+        let timing: CAMediaTimingFunction
+    }
 
     /// 面板正在显示模态对话框（如 .alert）时，阻止外部点击隐藏面板。
     /// 由 View 层在弹出/收起对话框时设置。
@@ -42,6 +59,7 @@ class ClipboardPanelManager {
         if panel == nil {
             setupPanel()
         }
+        panelViewModel.preparePanelDataIfNeeded()
     }
 
     private func setupPanel() {
@@ -63,7 +81,7 @@ class ClipboardPanelManager {
         panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
 
         let hostingController = NSHostingController(
-            rootView: ClipboardPanelRootView()
+            rootView: ClipboardPanelRootView(viewModel: panelViewModel)
                 .environmentObject(AppPreferencesStore.shared)
                 .environment(ClipboardRuntimeStore.shared)
         )
@@ -180,9 +198,16 @@ class ClipboardPanelManager {
     private func panelFrame(for layout: AppLayoutMode, on screen: NSScreen) -> NSRect {
         switch layout {
         case .horizontal:
-            let full = screen.frame          // 使用完整屏幕帧，覆盖 Dock 栏
-            let height: CGFloat = 320
-            return NSRect(x: full.minX, y: full.minY, width: full.width, height: height)
+            let full = screen.frame
+            let horizontalMargin: CGFloat = 11
+            let bottomMargin: CGFloat = 6
+            let height: CGFloat = 336
+            return NSRect(
+                x: full.minX + horizontalMargin,
+                y: full.minY + bottomMargin,
+                width: full.width - horizontalMargin * 2,
+                height: height
+            )
         case .vertical, .compact:
             return verticalFrame(on: screen)
         }
@@ -198,8 +223,7 @@ class ClipboardPanelManager {
         panel.disableScreenUpdatesUntilFlush()
         panel.setFrame(target, display: false)
 
-        // 横版贴底无需阴影（否则顶部出现边框线）；竖版浮窗保留阴影
-        panel.hasShadow = (layout == .vertical || layout == .compact)
+        panel.hasShadow = true
         applyPanelMovability(for: layout, panel: panel)
 
         DispatchQueue.main.async { [weak panel] in
@@ -211,7 +235,9 @@ class ClipboardPanelManager {
 
     /// Toggles the visibility of the clipboard panel.
     func togglePanel() {
-        if isVisible {
+        if isPreparingToShow {
+            isPreparingToShow = false
+        } else if isVisible {
             hidePanel()
         } else {
             showPanel()
@@ -220,6 +246,20 @@ class ClipboardPanelManager {
 
     /// Shows the panel sized for the current layout mode, then animates it in.
     func showPanel() {
+        guard !isVisible, !isPreparingToShow else { return }
+
+        isPreparingToShow = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await ClipboardMonitor.shared.captureCurrentPasteboardIfNeeded()
+            await self.panelViewModel.refreshFirstHistoryPageForPresentation()
+            guard self.isPreparingToShow else { return }
+            self.isPreparingToShow = false
+            self.presentPreparedPanel()
+        }
+    }
+
+    private func presentPreparedPanel() {
         guard !isVisible, let panel else { return }
 
         // 0. 拍照留底：在呼出面板之前，记下当前正活跃的 App
@@ -232,27 +272,20 @@ class ClipboardPanelManager {
         let screen = screenContainingMouse() ?? NSScreen.main
 
         applyPanelMovability(for: layout, panel: panel)
-        panel.hasShadow = (layout == .vertical || layout == .compact)
-
+        panel.hasShadow = true
 
         let visibleFrame = panelFrame(for: layout, on: screen ?? NSScreen.main!)
+        let presentationStyle = horizontalPanelPresentationStyle()
+        let shouldReduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let bottomAnimation = layout == .horizontal && presentationStyle == .bottomSlide && !shouldReduceMotion
+            ? prepareBottomPresentationAnimation(for: panel)
+            : nil
+        let contentAnimation = presentationStyle == .float || shouldReduceMotion
+            ? prepareContentPresentationAnimation(for: panel, layout: layout)
+            : nil
 
-        // Start slightly below the screen edge for horizontal; fade-in only for vertical.
-        let hiddenFrame: NSRect
-        if layout == .horizontal {
-            hiddenFrame = NSRect(
-                x: visibleFrame.minX,
-                y: visibleFrame.minY - 20,
-                width: visibleFrame.width,
-                height: visibleFrame.height
-            )
-        } else {
-            // For vertical panel just fade in without sliding
-            hiddenFrame = visibleFrame
-        }
-
-        panel.setFrame(hiddenFrame, display: true)
-        panel.alphaValue = 0.0
+        panel.setFrame(visibleFrame, display: true)
+        panel.alphaValue = layout == .horizontal ? 1.0 : 0.0
 
         // ⚠️ 不再调用 NSApp.activate(ignoringOtherApps:) — 那会把菜单栏切成自己的 App，
         //    导致目标 App 失去焦点，Cmd+V 无法命中正确窗口。
@@ -260,18 +293,187 @@ class ClipboardPanelManager {
         panel.makeKeyAndOrderFront(nil)
         panel.becomeFirstResponder()
 
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.25
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().setFrame(visibleFrame, display: true)
-            panel.animator().alphaValue = 1.0
-        }) { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.isVisible = true
-                self?.setupEventMonitor()
+        switch layout {
+        case .horizontal:
+            if presentationStyle == .bottomSlide, !shouldReduceMotion {
+                runBottomPresentationAnimation(bottomAnimation) { [weak self] in
+                    Task { @MainActor [weak self] in
+                        self?.completePresentation()
+                    }
+                }
+            } else {
+                runContentPresentationAnimation(contentAnimation) { [weak self] in
+                    Task { @MainActor [weak self] in
+                        self?.completePresentation()
+                    }
+                }
+            }
+        case .vertical, .compact:
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.18
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                panel.animator().alphaValue = 1.0
+            }) { [weak self] in
+                Task { @MainActor [weak self] in
+                    self?.completePresentation()
+                }
             }
         }
 
+    }
+
+    private func completePresentation() {
+        isVisible = true
+        setupEventMonitor()
+    }
+
+    private func prepareContentPresentationAnimation(
+        for panel: ClipboardPanel,
+        layout: AppLayoutMode
+    ) -> ContentPresentationAnimation? {
+        guard layout == .horizontal, let contentView = panel.contentView else {
+            return nil
+        }
+
+        contentView.wantsLayer = true
+        guard let layer = contentView.layer else {
+            return nil
+        }
+
+        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let initialOffset: CGFloat
+        let initialOpacity: Float
+        let duration: CFTimeInterval
+        let timing: CAMediaTimingFunction
+
+        if reduceMotion {
+            initialOffset = 0
+            initialOpacity = 0.0
+            duration = 0.12
+            timing = CAMediaTimingFunction(name: .easeOut)
+        } else {
+            initialOffset = 18
+            initialOpacity = 0.0
+            duration = 0.22
+            timing = CAMediaTimingFunction(controlPoints: 0.16, 1.0, 0.3, 1.0)
+        }
+
+        let fromTransform = CATransform3DMakeTranslation(0, initialOffset, 0)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.opacity = initialOpacity
+        layer.transform = fromTransform
+        CATransaction.commit()
+
+        return ContentPresentationAnimation(
+            layer: layer,
+            fromTransform: fromTransform,
+            fromOpacity: initialOpacity,
+            duration: duration,
+            timing: timing
+        )
+    }
+
+    private func runContentPresentationAnimation(
+        _ animation: ContentPresentationAnimation?,
+        completion: @escaping () -> Void
+    ) {
+        guard let animation else {
+            completion()
+            return
+        }
+
+        let layer = animation.layer
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.opacity = 1.0
+        layer.transform = CATransform3DIdentity
+        CATransaction.commit()
+
+        let transformAnimation = CABasicAnimation(keyPath: "transform")
+        transformAnimation.fromValue = NSValue(caTransform3D: animation.fromTransform)
+        transformAnimation.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+
+        let opacityAnimation = CABasicAnimation(keyPath: "opacity")
+        opacityAnimation.fromValue = animation.fromOpacity
+        opacityAnimation.toValue = 1.0
+
+        let group = CAAnimationGroup()
+        group.animations = [transformAnimation, opacityAnimation]
+        group.duration = animation.duration
+        group.timingFunction = animation.timing
+        group.isRemovedOnCompletion = true
+
+        layer.add(group, forKey: "horizontalPanelPresentation")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + animation.duration) {
+            completion()
+        }
+    }
+
+    private func prepareBottomPresentationAnimation(for panel: ClipboardPanel) -> BottomPresentationAnimation? {
+        guard let contentView = panel.contentView else {
+            return nil
+        }
+
+        contentView.wantsLayer = true
+        guard let layer = contentView.layer else {
+            return nil
+        }
+
+        let fromTransform = CATransform3DMakeTranslation(0, -76, 0)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.removeAnimation(forKey: "horizontalPanelBottomPresentation")
+        layer.opacity = 1.0
+        layer.transform = fromTransform
+        CATransaction.commit()
+
+        return BottomPresentationAnimation(
+            layer: layer,
+            fromTransform: fromTransform,
+            duration: 0.15,
+            timing: CAMediaTimingFunction(controlPoints: 0.20, 0.86, 0.18, 1.0)
+        )
+    }
+
+    private func runBottomPresentationAnimation(
+        _ animation: BottomPresentationAnimation?,
+        completion: @escaping () -> Void
+    ) {
+        guard let animation else {
+            completion()
+            return
+        }
+
+        let layer = animation.layer
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.transform = CATransform3DIdentity
+        CATransaction.commit()
+
+        let transformAnimation = CABasicAnimation(keyPath: "transform")
+        transformAnimation.fromValue = NSValue(caTransform3D: animation.fromTransform)
+        transformAnimation.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+        transformAnimation.duration = animation.duration
+        transformAnimation.timingFunction = animation.timing
+        transformAnimation.isRemovedOnCompletion = true
+
+        layer.add(transformAnimation, forKey: "horizontalPanelBottomPresentation")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + animation.duration) {
+            completion()
+        }
+    }
+
+    private func horizontalPanelPresentationStyle() -> HorizontalPanelPresentationStyle {
+        let storedValue = UserDefaults.standard.string(forKey: "horizontalPanelPresentationStyle")
+        return storedValue.flatMap(HorizontalPanelPresentationStyle.init(rawValue:))
+            ?? HorizontalPanelPresentationStyle.defaultValue
     }
 
     private func applyPanelMovability(for layout: AppLayoutMode, panel: ClipboardPanel) {
@@ -303,6 +505,8 @@ class ClipboardPanelManager {
 
     private func executeHide(restorePreviousActiveApp: Bool = true) {
         guard let panel = panel else { return }
+        panel.contentView?.layer?.removeAnimation(forKey: "horizontalPanelBottomPresentation")
+        panel.contentView?.layer?.transform = CATransform3DIdentity
         removeEventMonitor()
         panel.orderOut(nil)
         panel.resignKey()
@@ -352,12 +556,13 @@ class ClipboardPanelManager {
 }
 
 private struct ClipboardPanelRootView: View {
+    let viewModel: ClipboardViewModel
     @EnvironmentObject private var preferencesStore: AppPreferencesStore
     @Environment(ClipboardRuntimeStore.self) private var runtimeStore
     @AppStorage("appLanguage") private var appLanguage: AppLanguage = .auto
 
     var body: some View {
-        ClipboardMainView()
+        ClipboardMainView(viewModel: viewModel)
             .environmentObject(preferencesStore)
             .environment(runtimeStore)
             .modelContainer(runtimeStore.container)

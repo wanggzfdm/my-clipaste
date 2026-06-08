@@ -28,6 +28,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UserDefaults.standard.register(defaults: [
+            "singleClickPaste": true,
+            "autoPasteToActiveApp": true
+        ])
+
         if let appIcon = NSImage(named: "AppIcon") {
             NSApp.applicationIconImage = appIcon
         }

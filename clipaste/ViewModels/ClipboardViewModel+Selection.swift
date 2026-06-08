@@ -161,8 +161,11 @@ extension ClipboardViewModel {
     func reconcileSelectionAfterDisplayedItemsChange() {
         if shouldResetSelectionToFirstDisplayedItem {
             shouldResetSelectionToFirstDisplayedItem = false
-            selectFirstDisplayedItem()
-            return
+
+            if isSearchFilteringActive == false {
+                selectFirstDisplayedItem()
+                return
+            }
         }
 
         clampSelectionToDisplayedItems()

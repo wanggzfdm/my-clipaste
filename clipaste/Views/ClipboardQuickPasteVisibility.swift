@@ -13,7 +13,11 @@ struct ClipboardQuickPasteVisibleFramePreferenceKey: PreferenceKey {
         value: inout [ClipboardQuickPasteVisibleFrame],
         nextValue: () -> [ClipboardQuickPasteVisibleFrame]
     ) {
-        value.append(contentsOf: nextValue())
+        // 惰性合并：只在必要时更新
+        let next = nextValue()
+        if !next.isEmpty {
+            value.append(contentsOf: next)
+        }
     }
 }
 
@@ -118,7 +122,7 @@ extension View {
                             sourceIndex: sourceIndex,
                             frame: proxy.frame(in: .named(coordinateSpaceName))
                         )
-                    ]
+                    ].filter { !$0.frame.isNull && !$0.frame.isEmpty }
                 )
             }
         }

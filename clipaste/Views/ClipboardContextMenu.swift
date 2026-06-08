@@ -61,11 +61,12 @@ extension View {
 
     @ViewBuilder
     private func batchMenuContent(viewModel: ClipboardViewModel) -> some View {
-        let count = viewModel.selectedItemIDs.count
         let selectedItems = viewModel.displayedItemsForInteraction.filter { viewModel.selectedItemIDs.contains($0.id) }
-        let hasNonFavoriteItems = selectedItems.contains(where: { $0.isPinned == false })
+        let selectedClipboardItems = selectedItems.filter { $0.isObsidianSearchResult == false }
+        let count = selectedItems.count
+        let hasNonFavoriteItems = selectedClipboardItems.contains(where: { $0.isPinned == false })
         let hasFavoriteItems = selectedItems.contains(where: { $0.isPinned })
-        let deletableCount = selectedItems.filter { $0.isPinned == false }.count
+        let deletableCount = selectedClipboardItems.filter { $0.isPinned == false }.count
 
         Button {
             viewModel.batchCopy()
@@ -77,63 +78,65 @@ extension View {
             )
         }
 
-        Divider()
-
-        if hasNonFavoriteItems {
-            Button {
-                viewModel.addSelectionToFavorites()
-            } label: {
-                Label("Add to Favorites", systemImage: "star.fill")
-            }
-        }
-
-        if hasFavoriteItems {
-            Button {
-                viewModel.removeSelectionFromFavorites()
-            } label: {
-                Label("Remove from Favorites", systemImage: "star.slash")
-            }
-        }
-
-        if hasNonFavoriteItems || hasFavoriteItems {
+        if selectedClipboardItems.isEmpty == false {
             Divider()
-        }
 
-        Menu {
-            if viewModel.customGroups.isEmpty {
-                Text("No Groups")
-                    .foregroundColor(.secondary)
-            } else {
-                ForEach(viewModel.customGroups) { group in
-                    Button {
-                        viewModel.batchAssignToGroup(groupId: group.id)
-                    } label: {
-                        GroupMenuLabel(title: group.name, iconName: group.systemIconName)
+            if hasNonFavoriteItems {
+                Button {
+                    viewModel.addSelectionToFavorites()
+                } label: {
+                    Label("Add to Favorites", systemImage: "star.fill")
+                }
+            }
+
+            if hasFavoriteItems {
+                Button {
+                    viewModel.removeSelectionFromFavorites()
+                } label: {
+                    Label("Remove from Favorites", systemImage: "star.slash")
+                }
+            }
+
+            if hasNonFavoriteItems || hasFavoriteItems {
+                Divider()
+            }
+
+            Menu {
+                if viewModel.customGroups.isEmpty {
+                    Text("No Groups")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(viewModel.customGroups) { group in
+                        Button {
+                            viewModel.batchAssignToGroup(groupId: group.id)
+                        } label: {
+                            GroupMenuLabel(title: group.name, iconName: group.systemIconName)
+                        }
                     }
                 }
+
+                Divider()
+
+                Button(role: .destructive) {
+                    viewModel.batchAssignToGroup(groupId: nil)
+                } label: {
+                    Label("Remove from Group", systemImage: "folder.badge.minus")
+                }
+            } label: {
+                Label("Add to Group", systemImage: "folder.badge.plus")
             }
 
             Divider()
 
             Button(role: .destructive) {
-                viewModel.batchAssignToGroup(groupId: nil)
+                viewModel.batchDelete()
             } label: {
-                Label("Remove from Group", systemImage: "folder.badge.minus")
+                ClipboardCountMenuLabel(
+                    formatKey: "Delete %lld Items",
+                    count: deletableCount,
+                    systemImage: "trash"
+                )
             }
-        } label: {
-            Label("Add to Group", systemImage: "folder.badge.plus")
-        }
-
-        Divider()
-
-        Button(role: .destructive) {
-            viewModel.batchDelete()
-        } label: {
-            ClipboardCountMenuLabel(
-                formatKey: "Delete %lld Items",
-                count: deletableCount,
-                systemImage: "trash"
-            )
         }
     }
 
@@ -141,6 +144,49 @@ extension View {
 
     @ViewBuilder
     private func singleItemMenuContent(item: ClipboardItem, viewModel: ClipboardViewModel) -> some View {
+        if item.isObsidianSearchResult {
+            obsidianItemMenuContent(item: item, viewModel: viewModel)
+        } else {
+            clipboardItemMenuContent(item: item, viewModel: viewModel)
+        }
+    }
+
+    @ViewBuilder
+    private func obsidianItemMenuContent(item: ClipboardItem, viewModel: ClipboardViewModel) -> some View {
+        Button {
+            viewModel.handleSelection(id: item.id, isCommand: false, isShift: false)
+            viewModel.openInObsidian(item: item)
+        } label: {
+            Label("在 Obsidian 中打开", systemImage: "arrow.up.forward.app")
+        }
+
+        Divider()
+
+        Button {
+            viewModel.handleSelection(id: item.id, isCommand: false, isShift: false)
+            viewModel.copyToClipboard(item: item)
+        } label: {
+            Label("Copy", systemImage: "doc.on.doc")
+        }
+
+        Button {
+            viewModel.handleSelection(id: item.id, isCommand: false, isShift: false)
+            viewModel.pasteAsPlainText(item: item)
+        } label: {
+            Label("Paste as Plain Text", systemImage: "doc.plaintext")
+        }
+
+        Divider()
+
+        Button {
+            viewModel.showPreview(item: item)
+        } label: {
+            Label("Preview", systemImage: "eye")
+        }
+    }
+
+    @ViewBuilder
+    private func clipboardItemMenuContent(item: ClipboardItem, viewModel: ClipboardViewModel) -> some View {
         // 1. Core paste actions
         Button {
             viewModel.handleSelection(id: item.id, isCommand: false, isShift: false)
@@ -273,5 +319,4 @@ extension View {
             Label("Delete", systemImage: "trash")
         }
     }
-
 }

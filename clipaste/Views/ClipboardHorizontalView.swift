@@ -5,8 +5,8 @@ struct ClipboardHorizontalView: View {
     let items: [ClipboardItem]
     @FocusState var focusedField: ClipboardPanelFocusField?
     @AppStorage("requireCmdToDelete") private var requireCmdToDelete: Bool = false
-    @AppStorage("singleClickPaste") private var singleClickPaste = false
-    @AppStorage("autoPreview") private var autoPreview = true
+    @AppStorage("singleClickPaste") private var singleClickPaste = true
+    @AppStorage("autoPreview") private var autoPreview = false
     @State private var quickPasteIndexesByItemID: [UUID: Int] = [:]
 
     private let quickPasteCoordinateSpaceName = "ClipboardHorizontalQuickPasteSpace"
@@ -22,19 +22,19 @@ struct ClipboardHorizontalView: View {
                                 viewModel: viewModel,
                                 quickPasteIndex: quickPasteIndexesByItemID[item.id]
                             )
-                                .id(item.id)
-                                .contentShape(RoundedRectangle(cornerRadius: 16))
-                                .help(pasteHelpText)
-                                .clipboardQuickPasteVisibleFrame(
-                                    id: item.id,
-                                    sourceIndex: index,
-                                    coordinateSpaceName: quickPasteCoordinateSpaceName
-                                )
+                            .id(item.id)
+                            .contentShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
+                            .help(pasteHelpText)
+                            .clipboardQuickPasteVisibleFrame(
+                                id: item.id,
+                                sourceIndex: index,
+                                coordinateSpaceName: quickPasteCoordinateSpaceName
+                            )
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                    .padding(.bottom, 12)
+                    .padding(.horizontal, 33)
+                    .padding(.top, 13)
+                    .padding(.bottom, 5.5)
                     .frame(maxHeight: .infinity, alignment: .center)
                 }
                 .coordinateSpace(name: quickPasteCoordinateSpaceName)
@@ -67,10 +67,17 @@ struct ClipboardHorizontalView: View {
                     )
                 }
                 .onChange(of: viewModel.selectedItemIDs) { _, _ in
-                    viewModel.presentAutoPreviewForSelectionIfNeeded(isEnabled: autoPreview)
+                    viewModel.presentAutoPreviewForSelectionIfNeeded(isEnabled: shouldTriggerPreview)
                 }
                 .onChange(of: autoPreview) { _, _ in
-                    viewModel.presentAutoPreviewForSelectionIfNeeded(isEnabled: autoPreview)
+                    viewModel.presentAutoPreviewForSelectionIfNeeded(isEnabled: shouldTriggerPreview)
+                }
+                .onChange(of: viewModel.isPreviewModifierHeld) { _, _ in
+                    viewModel.presentAutoPreviewForSelectionIfNeeded(isEnabled: shouldTriggerPreview)
+                }
+                .onChange(of: viewModel.isQuickPasteModifierHeld) { _, isHeld in
+                    guard !isHeld, !quickPasteIndexesByItemID.isEmpty else { return }
+                    quickPasteIndexesByItemID = [:]
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
@@ -79,16 +86,26 @@ struct ClipboardHorizontalView: View {
 
     private var pasteHelpText: Text {
         if singleClickPaste {
-            Text("Click to paste to the active app")
+            Text("单击复制，双击粘贴到当前应用")
         } else {
-            Text("Double-click to paste to the active app")
+            Text("双击粘贴到当前应用")
         }
+    }
+
+    private var shouldTriggerPreview: Bool {
+        autoPreview && viewModel.isPreviewModifierHeld
     }
 
     private func updateQuickPasteIndexes(
         frames: [ClipboardQuickPasteVisibleFrame],
         viewportSize: CGSize
     ) {
+        guard viewModel.isQuickPasteModifierHeld else {
+            guard !quickPasteIndexesByItemID.isEmpty else { return }
+            quickPasteIndexesByItemID = [:]
+            return
+        }
+
         let resolvedIndexes = ClipboardQuickPasteVisibleIndexResolver.resolve(
             frames: frames,
             viewportSize: viewportSize,
@@ -108,7 +125,7 @@ struct ClipboardHorizontalView: View {
     private func scrollToItem(with proxy: ScrollViewProxy, itemID: UUID, animated: Bool) {
         DispatchQueue.main.async {
             if animated {
-                withAnimation(.easeInOut(duration: 0.12)) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8, blendDuration: 0.2)) {
                     proxy.scrollTo(itemID, anchor: .center)
                 }
             } else {

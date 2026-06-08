@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 @MainActor
 final class PasteEngine {
     static let shared = PasteEngine()
-    static let postHidePasteDelay: Duration = .milliseconds(60)
+    static let postHidePasteDelay: Duration = .milliseconds(120)
 
     private let pasteboard = NSPasteboard.general
     private let vKeyCode: CGKeyCode = 0x09

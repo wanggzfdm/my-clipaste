@@ -6,6 +6,7 @@ private struct ClipboardRecordSnapshot: Sendable {
     let contentHash: String
     let bundleIdentifier: String?
     let appName: String
+    let appIconDominantColorHex: String?
     let timestamp: Date
     let plainText: String?
     let hasPreviewImage: Bool
@@ -116,6 +117,7 @@ actor ClipboardSearcher {
                 contentHash: record.contentHash,
                 bundleIdentifier: record.appBundleID,
                 appName: record.appLocalizedName ?? "Unknown App",
+                appIconDominantColorHex: record.appIconDominantColorHex,
                 timestamp: record.timestamp,
                 plainText: truncatedText,
                 hasPreviewImage: record.previewImageData != nil,
@@ -267,6 +269,44 @@ final class StorageManager {
                 captureSessionID: captureSessionID
             )
         }
+    }
+
+    func upsertRecordAndWait(
+        hash: String,
+        text: String?,
+        appID: String?,
+        appName: String?,
+        appIconDominantColorHex: String? = nil,
+        appIconData: Data? = nil,
+        type: String,
+        rtfData: Data? = nil,
+        richTextArchiveData: Data? = nil,
+        previewImageData: Data? = nil,
+        imageData: Data? = nil,
+        imageMetadata: ClipboardImageMetadata? = nil,
+        sourcePlatformRawValue: String,
+        sourceDeviceName: String?,
+        captureMethodRawValue: String,
+        captureSessionID: UUID? = nil
+    ) async {
+        await storeActor.upsert(
+            hash: hash,
+            text: text,
+            appID: appID,
+            appName: appName,
+            appIconDominantColorHex: appIconDominantColorHex,
+            appIconData: appIconData,
+            type: type,
+            rtfData: rtfData,
+            richTextArchiveData: richTextArchiveData,
+            previewImageData: previewImageData,
+            imageData: imageData,
+            imageMetadata: imageMetadata,
+            sourcePlatformRawValue: sourcePlatformRawValue,
+            sourceDeviceName: sourceDeviceName,
+            captureMethodRawValue: captureMethodRawValue,
+            captureSessionID: captureSessionID
+        )
     }
 
     nonisolated
@@ -646,6 +686,7 @@ final class StorageManager {
             sourceBundleIdentifier: record.bundleIdentifier,
             appName: record.appName,
             appIcon: nil,
+            appIconDominantColorHex: record.appIconDominantColorHex,
             appIconName: ClipboardItem.appIconName(for: record.bundleIdentifier),
             timestamp: record.timestamp,
             rawText: (type == .text || type == .link || type == .code) ? record.plainText : nil,
@@ -846,6 +887,7 @@ actor ClipboardStoreActor {
             contentHash: record.contentHash,
             bundleIdentifier: record.appBundleID,
             appName: record.appLocalizedName ?? "Unknown App",
+            appIconDominantColorHex: record.appIconDominantColorHex,
             timestamp: record.timestamp,
             plainText: truncatedText,
             hasPreviewImage: record.previewImageData != nil,

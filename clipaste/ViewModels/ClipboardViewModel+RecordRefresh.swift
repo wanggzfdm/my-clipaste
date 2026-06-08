@@ -9,10 +9,6 @@ extension ClipboardViewModel {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] change in
                 guard let self, self.hasPreparedPanelData else { return }
-                guard self.isPanelPresentationActive else {
-                    self.needsReloadOnNextPresentation = true
-                    return
-                }
 
                 Task { @MainActor [weak self] in
                     await self?.refreshRecordAfterStoreChange(change)
@@ -22,8 +18,10 @@ extension ClipboardViewModel {
     }
 
     func refreshRecordAfterStoreChange(_ change: ClipboardRecordChange) async {
+        let wasPanelActive = isPanelPresentationActive
         let previousFirstVisibleID = displayedItemsForInteraction.first?.id
         let shouldFollowTopInsertion =
+            wasPanelActive &&
             change.kind == .upsert &&
             selectedItemIDs.count == 1 &&
             previousFirstVisibleID != nil &&
@@ -32,17 +30,29 @@ extension ClipboardViewModel {
 
         if change.kind == .delete {
             removeItem(withHash: change.contentHash)
-            reconcileSelectionAfterDisplayedItemsChange()
+            if wasPanelActive {
+                reconcileSelectionAfterDisplayedItemsChange()
+            } else {
+                clampSelectionToDisplayedItems()
+            }
             return
         }
 
         guard let item = await StorageManager.shared.fetchItem(hash: change.contentHash) else {
-            loadData()
+            if wasPanelActive {
+                loadData()
+            } else {
+                needsReloadOnNextPresentation = true
+            }
             return
         }
 
         upsertItem(item, shouldResort: change.kind.requiresResort)
-        reconcileSelectionAfterDisplayedItemsChange()
+        if wasPanelActive {
+            reconcileSelectionAfterDisplayedItemsChange()
+        } else {
+            clampSelectionToDisplayedItems()
+        }
 
         if shouldFollowTopInsertion,
            let previousFirstVisibleID,

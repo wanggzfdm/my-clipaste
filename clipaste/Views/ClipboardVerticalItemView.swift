@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct ClipboardVerticalItemView: View {
     private enum Layout {
@@ -21,7 +22,7 @@ struct ClipboardVerticalItemView: View {
 
     @AppStorage("clipboardLayout") private var clipboardLayout: AppLayoutMode = .horizontal
     @AppStorage("appAccentColor") private var appAccentColor: AppAccentColor = .defaultValue
-    @AppStorage("autoPreview") private var autoPreview = true
+    @AppStorage("autoPreview") private var autoPreview = false
 
     @State private var isHovering = false
     @State private var richPreviewText: AttributedString?
@@ -53,6 +54,10 @@ struct ClipboardVerticalItemView: View {
 
     private var showsQuickPasteBadge: Bool {
         quickPasteNumber != nil && viewModel.isQuickPasteModifierHeld
+    }
+
+    private var shouldTriggerQuickLookPreview: Bool {
+        allowsAutoPreview && autoPreview && viewModel.isPreviewModifierHeld && !usesPreviewPanel
     }
 
     private var richTextTaskKey: String {
@@ -104,6 +109,20 @@ struct ClipboardVerticalItemView: View {
         ?? .black.opacity(0.9)
     }
 
+    private var timestampHelpText: String {
+        item.timestamp.formatted(
+            .dateTime
+                .locale(Locale(identifier: "zh-Hans"))
+                .year()
+                .month(.wide)
+                .day()
+                .weekday(.wide)
+                .hour()
+                .minute()
+                .second()
+        )
+    }
+
     var body: some View {
         rowContent
             .padding(.horizontal, isCompact ? 6 : Layout.rowHorizontalPadding)
@@ -123,21 +142,34 @@ struct ClipboardVerticalItemView: View {
                 await refreshRichPreviewText()
             }
             .background { quickPasteShortcutBackground }
-            // 分享锚点：用 background 捕获 NSView + onChange 触发分享
             .shareable(item: item, viewModel: viewModel)
             .clipboardContextMenu(for: item, viewModel: viewModel)
             .onHover { hovering in
-                withAnimation(.easeInOut(duration: 0.1)) {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.9, blendDuration: 0.1)) {
                     isHovering = hovering
                 }
                 onHoverChange?(hovering)
                 viewModel.handleAutoPreviewHover(
                     for: item,
                     isHovering: hovering,
-                    isEnabled: allowsAutoPreview && autoPreview && !usesPreviewPanel
+                    isEnabled: shouldTriggerQuickLookPreview
                 )
             }
-            .animation(.easeInOut(duration: 0.15), value: showsQuickPasteBadge)
+            .onChange(of: viewModel.isPreviewModifierHeld) { _, _ in
+                viewModel.handleAutoPreviewHover(
+                    for: item,
+                    isHovering: isHovering,
+                    isEnabled: shouldTriggerQuickLookPreview
+                )
+            }
+            .onChange(of: autoPreview) { _, _ in
+                viewModel.handleAutoPreviewHover(
+                    for: item,
+                    isHovering: isHovering,
+                    isEnabled: shouldTriggerQuickLookPreview
+                )
+            }
+            .animation(nil, value: showsQuickPasteBadge)
             .onDrag {
                 viewModel.draggedItemId = item.id
                 return item.universalDragProvider
@@ -239,7 +271,7 @@ struct ClipboardVerticalItemView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                     } else {
                         // Compact: just show image indicator
-                        Text("Image")
+                        Text("图片")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                     }
@@ -307,14 +339,14 @@ struct ClipboardVerticalItemView: View {
                     bottomInlineAction
                 }
                 .padding(.top, 4)
-                .help(item.timestamp.formatted(date: .complete, time: .standard))
+                .help(timestampHelpText)
                 .frame(minWidth: 44, maxHeight: .infinity, alignment: .topTrailing)
             } else {
                 // Compact: just show time on the right
                 Text(item.timestamp.timeString)
                     .font(.system(size: 10))
                     .foregroundColor(timeTextColor)
-                    .help(item.timestamp.formatted(date: .complete, time: .standard))
+                    .help(timestampHelpText)
             }
         }
     }
@@ -362,7 +394,7 @@ struct ClipboardVerticalItemView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help(Text("AI"))
+            .help(Text("AI 功能"))
             .transition(.opacity.combined(with: .scale(scale: 0.96)))
         }
     }

@@ -35,4 +35,5 @@ openspec/
 .claude/
 .vscode/
 .adal/
-
+.opencode/
+*.pbxproj.backup

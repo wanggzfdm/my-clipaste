@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct GeneralSettingsView: View {
@@ -6,8 +7,10 @@ struct GeneralSettingsView: View {
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
     @AppStorage("appAccentColor") private var appAccentColor: AppAccentColor = .defaultValue
     @AppStorage("clipboardLayout") private var clipboardLayout: AppLayoutMode = .horizontal
+    @AppStorage("horizontalPanelPresentationStyle")
+    private var horizontalPanelPresentationStyle: HorizontalPanelPresentationStyle = .defaultValue
     @AppStorage("hideMenuBarIcon") private var hideMenuBarIcon = false
-    @AppStorage("singleClickPaste") private var singleClickPaste = false
+    @AppStorage("singleClickPaste") private var singleClickPaste = true
     @AppStorage("autoPreview") private var autoPreview = false
 
     @State private var showingClearAlert = false
@@ -16,6 +19,7 @@ struct GeneralSettingsView: View {
         Form {
             appearanceSection
             generalSection
+            obsidianSection
             windowSection
             historySection
         }
@@ -50,7 +54,7 @@ private extension GeneralSettingsView {
             }
 
             Toggle(isOn: $singleClickPaste) {
-                Text("Single-click Paste")
+                Text("单击复制，双击粘贴")
             }
 
             Toggle(isOn: $autoPreview) {
@@ -59,6 +63,60 @@ private extension GeneralSettingsView {
         } header: {
             SettingsSectionHeader(title: "Basic")
         }
+    }
+}
+
+// MARK: - Section 2: Obsidian
+
+private extension GeneralSettingsView {
+    var obsidianSection: some View {
+        Section {
+            Toggle(isOn: $viewModel.obsidianSearchEnabled) {
+                Text("Search Obsidian Vault")
+            }
+
+            LabeledContent {
+                HStack(spacing: 8) {
+                    TextField("Vault Path", text: $viewModel.obsidianVaultPath)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(!viewModel.obsidianSearchEnabled)
+
+                    Button {
+                        chooseObsidianVault()
+                    } label: {
+                        Label("Choose", systemImage: "folder")
+                    }
+                    .disabled(!viewModel.obsidianSearchEnabled)
+                }
+            } label: {
+                Text("Vault")
+            }
+        } header: {
+            SettingsSectionHeader(title: "Obsidian")
+        } footer: {
+            SettingsSectionFooter {
+                Text("When enabled, Clipaste searches Markdown notes in this vault while the clipboard search field is active.")
+            }
+        }
+    }
+
+    func chooseObsidianVault() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.prompt = String(localized: "Choose")
+
+        if !viewModel.obsidianVaultPath.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: viewModel.obsidianVaultPath)
+        }
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return
+        }
+
+        viewModel.obsidianVaultPath = url.path
     }
 }
 
@@ -88,6 +146,14 @@ private extension GeneralSettingsView {
             Picker("Layout Mode", selection: $clipboardLayout) {
                 ForEach(AppLayoutMode.allCases) { mode in
                     Text(mode.localizedTitle).tag(mode)
+                }
+            }
+
+            if clipboardLayout == .horizontal {
+                Picker("呈现方式", selection: $horizontalPanelPresentationStyle) {
+                    ForEach(HorizontalPanelPresentationStyle.allCases) { style in
+                        Text(style.localizedTitle).tag(style)
+                    }
                 }
             }
 

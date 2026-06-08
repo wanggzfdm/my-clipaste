@@ -12,6 +12,7 @@ struct ClipboardHeaderView: View {
 
     @ObservedObject var viewModel: ClipboardViewModel
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var preferencesStore: AppPreferencesStore
     @FocusState var focusedField: ClipboardPanelFocusField?
     @AppStorage("clipboardLayout") private var clipboardLayout: AppLayoutMode = .horizontal
@@ -71,7 +72,7 @@ struct ClipboardHeaderView: View {
                 horizontalHeader
             }
         }
-        .padding(.bottom, isCompactMode ? 4 : 8)
+        .padding(.bottom, isVerticalLayout ? (isCompactMode ? 4 : 8) : 0)
         .background(headerBackground)
         .popover(isPresented: $showEditPopover, arrowEdge: .bottom) {
             editGroupPopover
@@ -152,7 +153,7 @@ struct ClipboardHeaderView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.top, 8)
         .padding(.bottom, 4)
     }
 
@@ -246,7 +247,7 @@ struct ClipboardHeaderView: View {
         .shadow(color: searchFieldShadowColor, radius: focusedField == .searchBar ? 8 : 4, y: 2)
         .animation(horizontalSearchWidthAnimation, value: isHorizontalSearchExpanded)
         .animation(.easeInOut(duration: 0.18), value: viewModel.searchInput.isEmpty)
-        .help(isHorizontalSearchExpanded ? Text("Search History") : Text("Search"))
+        .help(isHorizontalSearchExpanded ? Text("搜索历史") : Text("搜索"))
     }
 
     private var horizontalSearchIcon: some View {
@@ -389,7 +390,7 @@ struct ClipboardHeaderView: View {
         }
         .buttonStyle(.plain)
         .frame(width: 24)
-        .help("All Groups")
+        .help("所有分组")
         .popover(isPresented: $isShowingGroupOverflowPopover, arrowEdge: .bottom) {
             groupOverflowPopover
                 .environment(\.locale, panelLocale)
@@ -622,7 +623,7 @@ struct ClipboardHeaderView: View {
             isTargeted: Binding(
                 get: { targetedBuiltInGroup == group },
                 set: { isTargeted in
-                    withAnimation(.easeInOut(duration: 0.15)) {
+                    withAnimation(.easeOut(duration: 0.08)) {
                         targetedBuiltInGroup = isTargeted ? group : nil
                     }
                 }
@@ -695,7 +696,7 @@ struct ClipboardHeaderView: View {
             isTargeted: Binding(
                 get: { targetedGroupId == group.id },
                 set: { isTargeted in
-                    withAnimation(.easeInOut(duration: 0.15)) {
+                    withAnimation(.easeOut(duration: 0.08)) {
                         targetedGroupId = isTargeted ? group.id : nil
                     }
                 }
@@ -742,7 +743,7 @@ struct ClipboardHeaderView: View {
                 .animation(.spring(), value: isPanelPinned)
         }
         .buttonStyle(.plain)
-        .help(isPanelPinned ? Text("Unpin Panel") : Text("Pin Panel"))
+        .help(isPanelPinned ? Text("取消固定面板") : Text("固定面板"))
     }
 
     // MARK: - 设置下拉菜单
@@ -930,25 +931,25 @@ struct ClipboardHeaderView: View {
     }
 
     private func selectAllGroup() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+        withAnimation(.easeOut(duration: 0.12)) {
             viewModel.showAllItems()
         }
     }
 
     private func selectCustomGroup(_ groupID: String) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+        withAnimation(.easeOut(duration: 0.12)) {
             viewModel.showCustomGroup(groupID)
         }
     }
 
     private func selectSmartFilter(_ type: ClipboardContentType) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+        withAnimation(.easeOut(duration: 0.12)) {
             viewModel.showSmartFilter(type)
         }
     }
 
     private func selectBuiltInGroup(_ group: ClipboardBuiltInGroup) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+        withAnimation(.easeOut(duration: 0.12)) {
             viewModel.showBuiltInGroup(group)
         }
     }
@@ -1184,10 +1185,10 @@ struct MinimalGroupTabButton: View {
         }
         .buttonStyle(.plain)
         .fixedSize(horizontal: true, vertical: false)
-        .animation(.easeInOut(duration: 0.14), value: isHovered)
-        .animation(.easeInOut(duration: 0.16), value: isSelected)
+        .animation(nil, value: isHovered)
+        .animation(nil, value: isSelected)
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
+            withAnimation(.easeOut(duration: 0.06)) {
                 isHovered = hovering
             }
         }
@@ -1384,7 +1385,11 @@ private struct GroupTabFramePreferenceKey: PreferenceKey {
     static var defaultValue: [String: CGRect] = [:]
 
     static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+        // 惰性合并：只在必要时更新
+        let next = nextValue()
+        if !next.isEmpty {
+            value.merge(next, uniquingKeysWith: { _, new in new })
+        }
     }
 }
 
@@ -1409,13 +1414,13 @@ private struct GroupBarDropDelegate: DropDelegate {
 
     func dropExited(info: DropInfo) {
         guard reorderTarget != nil else { return }
-        withAnimation(.easeInOut(duration: 0.12)) {
+        withAnimation(.easeOut(duration: 0.06)) {
             reorderTarget = nil
         }
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        withAnimation(.easeInOut(duration: 0.12)) {
+        withAnimation(.easeOut(duration: 0.06)) {
             reorderTarget = nil
         }
         viewModel.draggedGroup = nil
@@ -1429,12 +1434,12 @@ private struct GroupBarDropDelegate: DropDelegate {
               draggedGroup.id != nextTarget.groupID else { return }
 
         if reorderTarget != nextTarget {
-            withAnimation(.easeInOut(duration: 0.12)) {
+            withAnimation(.easeOut(duration: 0.06)) {
                 reorderTarget = nextTarget
             }
         }
 
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+        withAnimation(.easeOut(duration: 0.1)) {
             viewModel.moveGroup(
                 from: draggedGroup.id,
                 relativeTo: nextTarget.groupID,

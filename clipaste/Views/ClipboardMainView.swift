@@ -8,7 +8,8 @@ struct ClipboardMainView: View {
 
     @Environment(ClipboardRuntimeStore.self) private var runtimeStore
     @Environment(\.openSettings) private var openSettings
-    @StateObject var viewModel = ClipboardViewModel()
+    @Environment(\.colorScheme) private var colorScheme
+    @StateObject var viewModel: ClipboardViewModel
     @AppStorage("clipboardLayout") private var clipboardLayout: AppLayoutMode = .horizontal
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
     @FocusState private var focusedField: ClipboardPanelFocusField?
@@ -21,6 +22,16 @@ struct ClipboardMainView: View {
     @State private var pendingBlindTypedBaseSearchText: String?
     @State private var pendingBlindTypedSearchEvents: [NSEvent] = []
     private let searchService = TypeToSearchService.shared
+
+    @MainActor
+    init() {
+        _viewModel = StateObject(wrappedValue: ClipboardViewModel())
+    }
+
+    @MainActor
+    init(viewModel: ClipboardViewModel) {
+        _viewModel = StateObject(wrappedValue: viewModel)
+    }
 
     var body: some View {
         configuredContent
@@ -48,7 +59,9 @@ struct ClipboardMainView: View {
         panelLayoutContent
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.clear)
-            .background(VisualEffectView(material: .popover, blendingMode: .behindWindow))
+            .background(
+                panelBackground
+            )
             .background(
                 ClipboardPanelWindowObserver(
                     onWindowDidBecomeKey: handlePanelDidBecomeKey,
@@ -64,7 +77,7 @@ struct ClipboardMainView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: (clipboardLayout == .vertical || clipboardLayout == .compact) ? 14 : 0))
+            .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
             .ignoresSafeArea()
             .animation(.spring(response: 0.24, dampingFraction: 0.9), value: viewModel.operationNotice != nil)
             .onChange(of: clipboardLayout) {
@@ -93,7 +106,7 @@ struct ClipboardMainView: View {
                     return
                 }
 
-                if focusedField == .clipList {
+                if focusedField == .clipList, viewModel.isSearchFilteringActive == false {
                     viewModel.ensureListSelection()
                 }
             }
@@ -102,6 +115,7 @@ struct ClipboardMainView: View {
                 requestListFocusAfterSearchExit()
             }
             .onAppear {
+                viewModel.preparePanelDataIfNeeded()
                 searchService.onInterceptedKey = { [weak viewModel] event in
                     guard let viewModel else { return false }
 
@@ -137,6 +151,41 @@ struct ClipboardMainView: View {
                     viewModel.saveCustomTitle(for: item, title: title)
                 }
             }
+    }
+
+    @ViewBuilder
+    private var panelBackground: some View {
+        if clipboardLayout == .horizontal {
+            ZStack {
+                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+
+                LinearGradient(
+                    colors: [
+                        (colorScheme == .dark ? Color.black : Color(nsColor: .windowBackgroundColor))
+                            .opacity(colorScheme == .dark ? 0.26 : 0.26),
+                        (colorScheme == .dark ? Color.black : Color(nsColor: .windowBackgroundColor))
+                            .opacity(colorScheme == .dark ? 0.14 : 0.12)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(colorScheme == .dark ? 0.025 : 0.22),
+                        Color.clear
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+        } else {
+            WindowBackgroundGlass()
+        }
+    }
+
+    private var panelCornerRadius: CGFloat {
+        (clipboardLayout == .vertical || clipboardLayout == .compact) ? 14 : 26
     }
 
     @ViewBuilder
@@ -268,6 +317,10 @@ struct ClipboardMainView: View {
         guard let pendingListFocusRequest else { return false }
         guard isPanelKeyWindow else { return false }
         guard !displayedItems.isEmpty else { return false }
+        guard viewModel.isSearchFilteringActive == false else {
+            self.pendingListFocusRequest = nil
+            return false
+        }
 
         switch pendingListFocusRequest {
         case .preserveSelection:

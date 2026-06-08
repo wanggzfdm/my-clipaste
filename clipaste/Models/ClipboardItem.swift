@@ -82,6 +82,7 @@ struct ClipboardItem: Identifiable, Hashable, @unchecked Sendable {
     let sourceBundleIdentifier: String?
     let appName: String
     let appIcon: NSImage?
+    let appIconDominantColorHex: String?
     let appIconName: String // Or you can use NSImage, but keeping it simple for now
     let timestamp: Date
     let rawText: String?
@@ -120,6 +121,7 @@ struct ClipboardItem: Identifiable, Hashable, @unchecked Sendable {
         sourceBundleIdentifier: String? = nil,
         appName: String,
         appIcon: NSImage? = nil,
+        appIconDominantColorHex: String? = nil,
         appIconName: String,
         timestamp: Date = Date(),
         rawText: String? = nil,
@@ -151,6 +153,7 @@ struct ClipboardItem: Identifiable, Hashable, @unchecked Sendable {
         self.sourceBundleIdentifier = sourceBundleIdentifier
         self.appName = appName
         self.appIcon = appIcon
+        self.appIconDominantColorHex = appIconDominantColorHex
         self.appIconName = appIconName
         self.timestamp = timestamp
         self.rawText = rawText
@@ -215,6 +218,7 @@ extension ClipboardItem {
         lhs.sourceBundleIdentifier == rhs.sourceBundleIdentifier &&
         lhs.appName == rhs.appName &&
         lhs.appIconName == rhs.appIconName &&
+        lhs.appIconDominantColorHex == rhs.appIconDominantColorHex &&
         lhs.timestamp == rhs.timestamp &&
         lhs.rawText == rhs.rawText &&
         lhs.hasImagePreview == rhs.hasImagePreview &&
@@ -248,6 +252,7 @@ extension ClipboardItem {
         hasher.combine(sourceBundleIdentifier)
         hasher.combine(appName)
         hasher.combine(appIconName)
+        hasher.combine(appIconDominantColorHex)
         hasher.combine(timestamp)
         hasher.combine(rawText)
         hasher.combine(hasImagePreview)
@@ -274,6 +279,12 @@ extension ClipboardItem {
 }
 
 extension ClipboardItem {
+    static let obsidianSourceBundleIdentifier = "md.obsidian"
+
+    var isObsidianSearchResult: Bool {
+        sourceBundleIdentifier == Self.obsidianSourceBundleIdentifier
+    }
+
     /// 卡片角标等内容类型文案（与筛选标签共用同一套 String Catalog 键）。
     @MainActor
     func typeBadgeTitle() -> LocalizedStringResource {

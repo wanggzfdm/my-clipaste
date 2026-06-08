@@ -17,7 +17,7 @@ extension ClipboardViewModel {
             fullTexts.reserveCapacity(orderedItems.count)
 
             for item in orderedItems {
-                let plainText = await StorageManager.shared.loadPlainText(id: item.id)
+                let plainText = await plainText(for: item)
                 let resolvedText = plainText ?? item.rawText ?? item.textPreview
                 guard resolvedText.isEmpty == false else { continue }
                 fullTexts.append(resolvedText)
@@ -38,7 +38,10 @@ extension ClipboardViewModel {
         let ids = selectedItemIDs
         guard !ids.isEmpty else { return }
 
-        let targetItems = displayedItemsForInteraction.filter { ids.contains($0.id) }
+        let targetItems = displayedItemsForInteraction.filter {
+            ids.contains($0.id) && $0.isObsidianSearchResult == false
+        }
+        guard !targetItems.isEmpty else { return }
 
         if let groupId {
             for item in targetItems {
@@ -93,7 +96,10 @@ extension ClipboardViewModel {
         let ids = selectedItemIDs
         guard !ids.isEmpty else { return }
 
-        let targetItems = displayedItemsForInteraction.filter { ids.contains($0.id) }
+        let targetItems = displayedItemsForInteraction.filter {
+            ids.contains($0.id) && $0.isObsidianSearchResult == false
+        }
+        guard !targetItems.isEmpty else { return }
         let protectedItems = targetItems.filter(\.isPinned)
         let deletableItems = targetItems.filter { $0.isPinned == false }
         guard !deletableItems.isEmpty else {
@@ -131,7 +137,7 @@ extension ClipboardViewModel {
         )
     }
 
-    func pasteToActiveApp(item: ClipboardItem) {
+    func pasteToActiveApp(item: ClipboardItem, forceAutoPaste: Bool = false) {
         if suppressedPasteItemIDs.remove(item.id) != nil {
             return
         }
@@ -154,7 +160,7 @@ extension ClipboardViewModel {
 
             ClipboardPanelManager.shared.forceHidePanel()
 
-            let autoPaste = UserDefaults.standard.object(forKey: "autoPasteToActiveApp") as? Bool ?? true
+            let autoPaste = forceAutoPaste || (UserDefaults.standard.object(forKey: "autoPasteToActiveApp") as? Bool ?? true)
             if autoPaste {
                 guard PasteEngine.shared.checkAccessibilityPermissions() else {
                     return
@@ -187,7 +193,7 @@ extension ClipboardViewModel {
 
     func copyToClipboard(item: ClipboardItem) {
         Task { @MainActor in
-            guard let record = await StorageManager.shared.loadPasteRecord(id: item.id) else { return }
+            guard let record = await pasteRecord(for: item) else { return }
 
             let wroteToPasteboard = await PasteEngine.shared.writeToPasteboard(
                 record: record,
@@ -392,6 +398,16 @@ extension ClipboardViewModel {
         ClipboardLinkOpeningService.open(url)
     }
 
+    func openInObsidian(item: ClipboardItem) {
+        guard item.isObsidianSearchResult,
+              let filePath = item.fileURL,
+              let obsidianURL = obsidianURL(forFilePath: filePath) else {
+            return
+        }
+
+        NSWorkspace.shared.open(obsidianURL)
+    }
+
     func runAISkill(_ skill: AISkill, for item: ClipboardItem) {
         selectedItemIDs = [item.id]
         lastSelectedID = item.id
@@ -427,6 +443,10 @@ extension ClipboardViewModel {
     }
 
     func deleteItem(item: ClipboardItem) {
+        guard item.isObsidianSearchResult == false else {
+            return
+        }
+
         guard item.isPinned == false else {
             showFavoritesDeletionBlockedNotice()
             print("🛡️ 已阻止删除收藏记录: \(item.id)")
@@ -561,6 +581,7 @@ private extension ClipboardViewModel {
     }
 
     func setFavoriteState(for item: ClipboardItem, isFavorite: Bool) {
+        guard item.isObsidianSearchResult == false else { return }
         guard item.isPinned != isFavorite else { return }
 
         updateItem(id: item.id) { updatedItem in
@@ -615,6 +636,10 @@ private extension ClipboardViewModel {
     }
 
     func fullVisibleText(for item: ClipboardItem) -> String? {
+        if item.isObsidianSearchResult {
+            return item.rawText ?? item.textPreview
+        }
+
         let text: String?
         switch item.contentType {
         case .text, .link, .code:
@@ -635,6 +660,12 @@ private extension ClipboardViewModel {
     }
 
     func moveItemToTop(_ item: ClipboardItem) {
+        guard item.isObsidianSearchResult == false else {
+            selectedItemIDs = [item.id]
+            lastSelectedID = item.id
+            return
+        }
+
         if let index = itemIndexByID[item.id], index != 0 {
             withAnimation(.easeInOut(duration: 0.2)) {
                 moveItem(withID: item.id, to: 0)
@@ -646,5 +677,15 @@ private extension ClipboardViewModel {
         Task {
             await StorageManager.shared.moveItemToTop(id: item.id)
         }
+    }
+
+    func obsidianURL(forFilePath filePath: String) -> URL? {
+        var components = URLComponents()
+        components.scheme = "obsidian"
+        components.host = "open"
+        components.queryItems = [
+            URLQueryItem(name: "path", value: filePath)
+        ]
+        return components.url
     }
 }
