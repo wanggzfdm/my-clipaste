@@ -35,7 +35,7 @@ struct ClipboardHorizontalView: View {
                     .padding(.horizontal, 33)
                     .padding(.top, 13)
                     .padding(.bottom, 5.5)
-                    .frame(maxHeight: .infinity, alignment: .center)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
                 }
                 .coordinateSpace(name: quickPasteCoordinateSpaceName)
                 .onPreferenceChange(ClipboardQuickPasteVisibleFramePreferenceKey.self) { frames in

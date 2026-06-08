@@ -201,7 +201,7 @@ class ClipboardPanelManager {
             let full = screen.frame
             let horizontalMargin: CGFloat = 11
             let bottomMargin: CGFloat = 6
-            let height: CGFloat = 336
+            let height: CGFloat = 315
             return NSRect(
                 x: full.minX + horizontalMargin,
                 y: full.minY + bottomMargin,
