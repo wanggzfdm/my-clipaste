@@ -2,6 +2,7 @@ import CloudKit
 import CoreData
 import Foundation
 import os
+import Security
 import SwiftData
 
 enum ClipboardSyncDiagnosticLevel: String, Sendable {
@@ -1231,6 +1232,7 @@ enum ClipboardStorageRegistry {
 }
 
 private enum CloudSyncPreflightError: LocalizedError {
+    case missingCloudKitEntitlement(String)
     case noAccount
     case restricted
     case temporarilyUnavailable
@@ -1240,6 +1242,8 @@ private enum CloudSyncPreflightError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .missingCloudKitEntitlement(let containerIdentifier):
+            return "当前构建缺少 CloudKit 权限，无法开启 iCloud 同步。请确认签名 entitlements 包含 \(containerIdentifier)。"
         case .noAccount:
             return "当前 Mac 未登录 iCloud。请先在系统设置中登录 Apple ID 后再开启同步。"
         case .restricted:
@@ -1258,6 +1262,7 @@ private enum CloudSyncPreflightError: LocalizedError {
 
 private enum CloudSyncAvailabilityService {
     static func preflight(containerIdentifier: String) async throws {
+        try assertCloudKitEntitlement(containerIdentifier: containerIdentifier)
         let container = CKContainer(identifier: containerIdentifier)
 
         do {
@@ -1287,8 +1292,35 @@ private enum CloudSyncAvailabilityService {
     }
 
     static func accountRecordName(containerIdentifier: String) async throws -> String {
+        try assertCloudKitEntitlement(containerIdentifier: containerIdentifier)
         let container = CKContainer(identifier: containerIdentifier)
         return try await fetchUserRecordID(from: container).recordName
+    }
+
+    private static func assertCloudKitEntitlement(containerIdentifier: String) throws {
+        guard hasCloudKitEntitlement(containerIdentifier: containerIdentifier) else {
+            throw CloudSyncPreflightError.missingCloudKitEntitlement(containerIdentifier)
+        }
+    }
+
+    private static func hasCloudKitEntitlement(containerIdentifier: String) -> Bool {
+        guard let task = SecTaskCreateFromSelf(nil) else {
+            return false
+        }
+
+        let services = SecTaskCopyValueForEntitlement(
+            task,
+            "com.apple.developer.icloud-services" as CFString,
+            nil
+        ) as? [String]
+        let containers = SecTaskCopyValueForEntitlement(
+            task,
+            "com.apple.developer.icloud-container-identifiers" as CFString,
+            nil
+        ) as? [String]
+
+        return services?.contains("CloudKit") == true
+            && containers?.contains(containerIdentifier) == true
     }
 
     private static func fetchAccountStatus(from container: CKContainer) async throws -> CKAccountStatus {

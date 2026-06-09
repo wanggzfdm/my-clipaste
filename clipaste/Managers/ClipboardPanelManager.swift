@@ -308,14 +308,21 @@ class ClipboardPanelManager {
                 }
             }
         case .vertical, .compact:
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.18
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                panel.animator().alphaValue = 1.0
-            }) { [weak self] in
+            let finishPresentation: () -> Void = { [weak self] in
                 Task { @MainActor [weak self] in
                     self?.completePresentation()
                 }
+            }
+
+            if shouldReduceMotion {
+                panel.alphaValue = 1.0
+                finishPresentation()
+            } else {
+                NSAnimationContext.runAnimationGroup({ context in
+                    context.duration = 0.1
+                    context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 0.88, 0.20, 1.0)
+                    panel.animator().alphaValue = 1.0
+                }, completionHandler: finishPresentation)
             }
         }
 
@@ -334,26 +341,18 @@ class ClipboardPanelManager {
             return nil
         }
 
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            return nil
+        }
+
         contentView.wantsLayer = true
         guard let layer = contentView.layer else {
             return nil
         }
 
-        let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let initialOffset: CGFloat
-        let duration: CFTimeInterval
-        let timing: CAMediaTimingFunction
-
-        if reduceMotion {
-            initialOffset = 0
-            duration = 1.0
-            timing = CAMediaTimingFunction(name: .easeOut)
-        } else {
-            initialOffset = 8
-            duration = 1.0
-            timing = CAMediaTimingFunction(name: .linear)
-        }
-
+        let initialOffset: CGFloat = 5
+        let duration: CFTimeInterval = 0.1
+        let timing = CAMediaTimingFunction(controlPoints: 0.22, 0.88, 0.20, 1.0)
         let fromTransform = CATransform3DMakeTranslation(0, initialOffset, 0)
 
         CATransaction.begin()
@@ -412,7 +411,7 @@ class ClipboardPanelManager {
             return nil
         }
 
-        let fromTransform = CATransform3DMakeTranslation(0, -76, 0)
+        let fromTransform = CATransform3DMakeTranslation(0, -54, 0)
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -424,8 +423,8 @@ class ClipboardPanelManager {
         return BottomPresentationAnimation(
             layer: layer,
             fromTransform: fromTransform,
-            duration: 0.15,
-            timing: CAMediaTimingFunction(controlPoints: 0.20, 0.86, 0.18, 1.0)
+            duration: 0.1,
+            timing: CAMediaTimingFunction(controlPoints: 0.18, 0.92, 0.20, 1.0)
         )
     }
 

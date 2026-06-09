@@ -482,6 +482,22 @@ struct ClipboardHeaderView: View {
                     isShowingNewGroupPopover = true
                 }
             }
+
+            Divider()
+                .padding(.vertical, 3)
+
+            GroupOverflowRow(
+                title: .localized(LocalizedStringResource("Settings…")),
+                icon: "gearshape",
+                isSelected: false,
+                accentColor: appAccentColor
+            ) {
+                isShowingAIModelPopover = false
+                isShowingGroupOverflowPopover = false
+                SettingsWindowCoordinator.open {
+                    openSettings()
+                }
+            }
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 8)

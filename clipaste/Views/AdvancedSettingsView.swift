@@ -102,7 +102,7 @@ private extension AdvancedSettingsView {
             }
             .disabled(runtimeStore.isSyncing)
 
-            if runtimeStore.isSyncEnabled {
+            if runtimeStore.isSyncEnabled || runtimeStore.syncError != nil {
                 HStack {
                     HStack(spacing: 6) {
                         Circle()
@@ -121,22 +121,24 @@ private extension AdvancedSettingsView {
 
                     Spacer()
 
-                    Button("Check iCloud Connection Status", systemImage: "arrow.triangle.2.circlepath") {
-                        runtimeStore.refreshCurrentRoute()
+                    if runtimeStore.isSyncEnabled {
+                        Button("Check iCloud Connection Status", systemImage: "arrow.triangle.2.circlepath") {
+                            runtimeStore.refreshCurrentRoute()
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.plain)
+                        .font(.subheadline)
+                        .bold()
+                        .rotationEffect(Angle(degrees: runtimeStore.isSyncing ? 360 : 0))
+                        .animation(
+                            runtimeStore.isSyncing
+                                ? Animation.linear(duration: 1).repeatForever(autoreverses: false)
+                                : .default,
+                            value: runtimeStore.isSyncing
+                        )
+                        .foregroundStyle(runtimeStore.isSyncing ? .secondary : appAccentColor.color)
+                        .disabled(runtimeStore.isSyncing)
                     }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.plain)
-                    .font(.subheadline)
-                    .bold()
-                    .rotationEffect(Angle(degrees: runtimeStore.isSyncing ? 360 : 0))
-                    .animation(
-                        runtimeStore.isSyncing
-                            ? Animation.linear(duration: 1).repeatForever(autoreverses: false)
-                            : .default,
-                        value: runtimeStore.isSyncing
-                    )
-                    .foregroundStyle(runtimeStore.isSyncing ? .secondary : appAccentColor.color)
-                    .disabled(runtimeStore.isSyncing)
                 }
 
             }
