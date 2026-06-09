@@ -17,8 +17,8 @@ extension ClipboardViewModel {
             fullTexts.reserveCapacity(orderedItems.count)
 
             for item in orderedItems {
-                let plainText = await plainText(for: item)
-                let resolvedText = plainText ?? item.rawText ?? item.textPreview
+                let resolvedPlainText = await plainText(for: item)
+                let resolvedText = resolvedPlainText ?? item.rawText ?? item.textPreview
                 guard resolvedText.isEmpty == false else { continue }
                 fullTexts.append(resolvedText)
             }
@@ -461,6 +461,19 @@ extension ClipboardViewModel {
             dismissQuickLook()
         }
         StorageManager.shared.deleteRecord(hash: item.contentHash)
+    }
+
+    func translateItem(item: ClipboardItem) {
+        // 使用 translateToEnglish 预设技能
+        let translateSkill = AISkill(
+            id: UUID(),
+            name: String(localized: "Preset Skill Translate to English"),
+            promptTemplate: String(localized: "Preset Prompt Translate to English"),
+            supportedContentTypes: DefaultAISkillPreset.translateToEnglish.supportedContentTypes,
+            configurationID: nil,
+            outputMode: DefaultAISkillPreset.translateToEnglish.outputMode
+        )
+        runAISkill(translateSkill, for: item)
     }
 }
 

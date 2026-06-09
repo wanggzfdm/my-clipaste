@@ -297,6 +297,16 @@ extension View {
 
         Divider()
 
+        // Translate
+        Button {
+            viewModel.handleSelection(id: item.id, isCommand: false, isShift: false)
+            viewModel.translateItem(item: item)
+        } label: {
+            Label("Translate", systemImage: "text.bubble")
+        }
+
+        Divider()
+
         // 4. Preview & share
         Button {
             viewModel.showPreview(item: item)

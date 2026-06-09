@@ -1,4 +1,5 @@
 import SwiftUI
+import os
 import AppKit
 import NaturalLanguage
 
@@ -103,12 +104,32 @@ struct ClipboardItemPreviewView: View {
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
+
+            // DEBUG: translation state
+            Text(debugStateLabel)
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundStyle(.red)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(Color.yellow.opacity(0.3))
+                .clipShape(RoundedRectangle(cornerRadius: 3))
         }
         .padding(.horizontal, padding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
     }
     
+    private var debugStateLabel: String {
+        switch translationState {
+        case .idle: return "TR:idle"
+        case .skipped: return "TR:skipped"
+        case .unavailable(let msg): return "TR:unavail(\(msg.prefix(20)))"
+        case .translating: return "TR:translating"
+        case .translated: return "TR:done"
+        case .failed(let msg): return "TR:fail(\(msg.prefix(20)))"
+        }
+    }
+
     private var typeBadgeColor: Color {
         switch item.contentType {
         case .text: return .blue
@@ -144,21 +165,45 @@ struct ClipboardItemPreviewView: View {
     
     @ViewBuilder
     private var textContentView: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let rawText = item.rawText, !rawText.isEmpty {
-                wrappedContentText(
-                    rawText,
-                    font: .system(size: isCompact ? 13 : 15, design: .default),
-                    lineSpacing: isCompact ? 4 : 6
-                )
+        if let rawText = item.rawText, !rawText.isEmpty {
+            let hasTranslation = {
+                switch translationState {
+                case .idle, .skipped: return false
+                case .unavailable, .translating, .translated, .failed: return true
+                }
+            }()
 
-                translationView
+            VStack(alignment: .leading, spacing: 0) {
+                // Original text section
+                VStack(alignment: .leading, spacing: 8) {
+                    if hasTranslation {
+                        Label("原文", systemImage: "doc.text")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    wrappedContentText(
+                        rawText,
+                        font: .system(size: isCompact ? 13 : 15, design: .default),
+                        lineSpacing: isCompact ? 4 : 6
+                    )
+                }
+
+                // Translation section
+                if hasTranslation {
+                    Divider()
+                        .opacity(0.15)
+                        .padding(.vertical, 10)
+
+                    translationView
+                }
 
                 // Metadata
                 metadataView(textLength: rawText.utf8.count)
-            } else {
-                emptyContentPlaceholder
+
             }
+        } else {
+            emptyContentPlaceholder
         }
     }
     
@@ -364,15 +409,20 @@ struct ClipboardItemPreviewView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         case .translating:
-            HStack(spacing: 8) {
-                ProgressView()
-                    .controlSize(.small)
-
-                Text("Translating preview…")
-                    .font(.system(size: 11))
+            VStack(alignment: .leading, spacing: 8) {
+                Label("翻译", systemImage: "character.bubble")
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+
+                    Text("正在翻译…")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
             }
-            .padding(.top, 2)
         case .translated(let text):
             VStack(alignment: .leading, spacing: 8) {
                 Label("翻译", systemImage: "character.bubble")
@@ -390,27 +440,39 @@ struct ClipboardItemPreviewView: View {
             .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
             .clipShape(RoundedRectangle(cornerRadius: 8))
         case .failed(let message):
-            Label(message, systemImage: "exclamationmark.triangle")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                Label("翻译", systemImage: "character.bubble")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+
+                Label(message, systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
     @MainActor
     private func refreshPreviewTranslation() async {
         translationState = .idle
+        os_log("[PreviewTranslation] Starting for item: %{public}@, contentType: %{public}@, hasRTF: %{public}d", type: .info, item.id.uuidString, item.contentType.rawValue, item.hasRTF)
 
         guard let request = PreviewAutoTranslationRequest(item: item) else {
+            let rawText = item.rawText?.prefix(100) ?? "nil"
+            os_log("[PreviewTranslation] Request creation failed: rawText= %{public}@", type: .error, String(rawText))
             translationState = .skipped
             return
         }
 
         guard let configuration = PreviewAutoTranslator.activeConfiguration else {
+            let settings = AISettingsViewModel.shared
+            os_log("[PreviewTranslation] No active config: isAIEnabled= %{public}d, activeID= %{public}@, configsCount= %{public}d", type: .error, settings.isAIEnabled ? 1 : 0, settings.activeConfigurationID?.uuidString ?? "nil", settings.configurations.count)
             translationState = .unavailable(String(localized: "No active AI configuration is available."))
             return
         }
 
         translationState = .translating
+        os_log("[PreviewTranslation] Translating text (%{public}d chars)", type: .info, request.text.count)
 
         do {
             let translated = try await PreviewAutoTranslator.translate(request.text, configuration: configuration)
@@ -451,13 +513,17 @@ private struct PreviewAutoTranslationRequest {
     let text: String
 
     init?(item: ClipboardItem) {
+        os_log("[PreviewTranslationRequest] Checking: contentType= %{public}@, hasRTF= %{public}d", type: .info, item.contentType.rawValue, item.hasRTF)
         guard item.contentType == .text, item.hasRTF == false else {
+            os_log("[PreviewTranslationRequest] Failed: not text or hasRTF", type: .error)
             return nil
         }
 
         let text = (item.rawText ?? item.previewText ?? item.textPreview)
             .trimmingCharacters(in: .whitespacesAndNewlines)
+        os_log("[PreviewTranslationRequest] Extracted %{public}d chars", type: .info, text.count)
         guard PreviewAutoTranslator.shouldTranslate(text) else {
+            os_log("[PreviewTranslationRequest] shouldTranslate returned false", type: .default)
             return nil
         }
 
@@ -486,10 +552,14 @@ private enum PreviewAutoTranslator {
     }
 
     static func shouldTranslate(_ text: String) -> Bool {
+        os_log("[PreviewAutoTranslator.shouldTranslate] Checking %{public}d chars", type: .info, text.count)
+        let isChinese = isSimplifiedChinese(text)
+        let isStructured = isLikelyStructuredOrCode(text)
+        os_log("[PreviewAutoTranslator.shouldTranslate] isChinese= %{public}d, isStructured= %{public}d", type: .info, isChinese ? 1 : 0, isStructured ? 1 : 0)
         guard text.isEmpty == false,
               text.count <= 5_000,
-              isSimplifiedChinese(text) == false,
-              isLikelyStructuredOrCode(text) == false else {
+              isChinese == false,
+              isStructured == false else {
             return false
         }
 

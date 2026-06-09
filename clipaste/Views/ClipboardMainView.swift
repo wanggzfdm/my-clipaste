@@ -190,22 +190,27 @@ struct ClipboardMainView: View {
 
     @ViewBuilder
     private var mainContent: some View {
-        if displayedItems.isEmpty {
-            ClipboardEmptyStateView(viewModel: viewModel)
-        } else {
-            switch clipboardLayout {
-            case .horizontal:
-                ClipboardHorizontalView(
-                    viewModel: viewModel,
-                    items: displayedItems,
-                    focusedField: _focusedField
-                )
-            case .vertical, .compact:
-                ClipboardVerticalListView(
-                    viewModel: viewModel,
-                    items: displayedItems,
-                    focusedField: _focusedField
-                )
+        SearchResultsTransitionContainer(
+            isActive: viewModel.isSearchFilteringActive,
+            token: searchTransitionToken
+        ) {
+            if displayedItems.isEmpty {
+                ClipboardEmptyStateView(viewModel: viewModel)
+            } else {
+                switch clipboardLayout {
+                case .horizontal:
+                    ClipboardHorizontalView(
+                        viewModel: viewModel,
+                        items: displayedItems,
+                        focusedField: _focusedField
+                    )
+                case .vertical, .compact:
+                    ClipboardVerticalListView(
+                        viewModel: viewModel,
+                        items: displayedItems,
+                        focusedField: _focusedField
+                    )
+                }
             }
         }
     }
@@ -463,6 +468,13 @@ struct ClipboardMainView: View {
 
     private var displayedItemIDs: [UUID] {
         viewModel.displayedItemIDs
+    }
+
+    private var searchTransitionToken: SearchResultsTransitionToken {
+        SearchResultsTransitionToken(
+            query: viewModel.activeSearchQuery,
+            itemIDs: displayedItemIDs
+        )
     }
 
     @ViewBuilder

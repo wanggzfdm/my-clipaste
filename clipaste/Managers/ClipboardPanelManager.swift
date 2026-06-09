@@ -32,7 +32,6 @@ class ClipboardPanelManager {
     private struct ContentPresentationAnimation {
         let layer: CALayer
         let fromTransform: CATransform3D
-        let fromOpacity: Float
         let duration: CFTimeInterval
         let timing: CAMediaTimingFunction
     }
@@ -342,34 +341,29 @@ class ClipboardPanelManager {
 
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         let initialOffset: CGFloat
-        let initialOpacity: Float
         let duration: CFTimeInterval
         let timing: CAMediaTimingFunction
 
         if reduceMotion {
             initialOffset = 0
-            initialOpacity = 0.0
-            duration = 0.12
+            duration = 1.0
             timing = CAMediaTimingFunction(name: .easeOut)
         } else {
-            initialOffset = 18
-            initialOpacity = 0.0
-            duration = 0.22
-            timing = CAMediaTimingFunction(controlPoints: 0.16, 1.0, 0.3, 1.0)
+            initialOffset = 8
+            duration = 1.0
+            timing = CAMediaTimingFunction(name: .linear)
         }
 
         let fromTransform = CATransform3DMakeTranslation(0, initialOffset, 0)
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        layer.opacity = initialOpacity
         layer.transform = fromTransform
         CATransaction.commit()
 
         return ContentPresentationAnimation(
             layer: layer,
             fromTransform: fromTransform,
-            fromOpacity: initialOpacity,
             duration: duration,
             timing: timing
         )
@@ -388,7 +382,6 @@ class ClipboardPanelManager {
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        layer.opacity = 1.0
         layer.transform = CATransform3DIdentity
         CATransaction.commit()
 
@@ -396,12 +389,8 @@ class ClipboardPanelManager {
         transformAnimation.fromValue = NSValue(caTransform3D: animation.fromTransform)
         transformAnimation.toValue = NSValue(caTransform3D: CATransform3DIdentity)
 
-        let opacityAnimation = CABasicAnimation(keyPath: "opacity")
-        opacityAnimation.fromValue = animation.fromOpacity
-        opacityAnimation.toValue = 1.0
-
         let group = CAAnimationGroup()
-        group.animations = [transformAnimation, opacityAnimation]
+        group.animations = [transformAnimation]
         group.duration = animation.duration
         group.timingFunction = animation.timing
         group.isRemovedOnCompletion = true
