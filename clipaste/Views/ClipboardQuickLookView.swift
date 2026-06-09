@@ -1,5 +1,6 @@
 import SwiftUI
 import NaturalLanguage
+import os
 
 struct ClipboardQuickLookView: View {
     let item: ClipboardItem
@@ -22,8 +23,11 @@ struct ClipboardQuickLookView: View {
                 .frame(width: 280, height: 120)
 
             } else {
-                ClipboardQuickLookTextContent(item: item)
+                ClipboardQuickLookTextContent(item: item, viewModel: viewModel)
             }
+        }
+        .onHover { hovering in
+            viewModel.handleAutoPreviewPopoverHover(for: item, isHovering: hovering)
         }
         // Popover 原生自带材质背景，无需额外设置
     }
@@ -56,9 +60,11 @@ private struct ClipboardQuickLookLinkContent: View {
 
 private struct ClipboardQuickLookTextContent: View {
     let item: ClipboardItem
+    @ObservedObject var viewModel: ClipboardViewModel
 
     @State private var highlightedAttr: NSAttributedString?
     @State private var translationState: QuickLookTranslationState = .idle
+    @State private var isHoveringTranslation = false
 
     private var safeText: String {
         let fullText = item.rawText ?? item.textPreview
@@ -95,10 +101,14 @@ private struct ClipboardQuickLookTextContent: View {
     @ViewBuilder
     private var translationOverlay: some View {
         switch translationState {
-        case .idle, .skipped:
+        case .idle:
             EmptyView()
-        case .unavailable:
-            EmptyView()
+        case .skipped(let message), .unavailable(let message):
+            translationCard {
+                Label(message, systemImage: "sparkles")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
         case .translating:
             translationCard {
                 HStack(spacing: 8) {
@@ -111,7 +121,7 @@ private struct ClipboardQuickLookTextContent: View {
                 }
             }
         case .translated(let text):
-            translationCard {
+            translationCard(isInteractive: true) {
                 VStack(alignment: .leading, spacing: 6) {
                     Label("翻译", systemImage: "character.bubble")
                         .font(.system(size: 11, weight: .semibold))
@@ -124,6 +134,18 @@ private struct ClipboardQuickLookTextContent: View {
                         .textSelection(.enabled)
                 }
             }
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .onTapGesture {
+                viewModel.copyQuickLookTranslation(text)
+            }
+            .onHover { hovering in
+                isHoveringTranslation = hovering
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
         case .failed(let message):
             translationCard {
                 Label(message, systemImage: "exclamationmark.triangle")
@@ -133,14 +155,27 @@ private struct ClipboardQuickLookTextContent: View {
         }
     }
 
-    private func translationCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+    private func translationCard<Content: View>(
+        isInteractive: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
         content()
             .padding(10)
             .frame(maxWidth: 640, alignment: .leading)
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .background(
+                isInteractive && isHoveringTranslation
+                    ? AnyShapeStyle(.selection.opacity(0.18))
+                    : AnyShapeStyle(.regularMaterial),
+                in: RoundedRectangle(cornerRadius: 8)
+            )
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    .stroke(
+                        isInteractive && isHoveringTranslation
+                            ? Color.accentColor.opacity(0.35)
+                            : Color.primary.opacity(0.08),
+                        lineWidth: 1
+                    )
             }
             .shadow(color: Color.black.opacity(0.12), radius: 6, y: 2)
             .padding(12)
@@ -150,12 +185,17 @@ private struct ClipboardQuickLookTextContent: View {
     private func refreshTranslation() async {
         translationState = .idle
 
+        os_log("[QuickLookTranslation] Starting for item: %{public}@, contentType: %{public}@, hasRTF: %{public}d", type: .info, item.id.uuidString, item.contentType.rawValue, item.hasRTF)
+
         guard let request = QuickLookTranslationRequest(item: item, text: safeText) else {
-            translationState = .skipped
+            os_log("[QuickLookTranslation] Skipped: request unavailable", type: .info)
+            translationState = .skipped(String(localized: "Preview translation is available for text content."))
             return
         }
 
         guard let configuration = QuickLookAutoTranslator.activeConfiguration else {
+            let settings = AISettingsViewModel.shared
+            os_log("[QuickLookTranslation] No active config: isAIEnabled=%{public}d, activeID=%{public}@, configsCount=%{public}d", type: .error, settings.isAIEnabled ? 1 : 0, settings.activeConfigurationID?.uuidString ?? "nil", settings.configurations.count)
             translationState = .unavailable(String(localized: "No active AI configuration is available."))
             return
         }
@@ -165,10 +205,12 @@ private struct ClipboardQuickLookTextContent: View {
         translationState = .translating
 
         do {
-            let translated = try await QuickLookAutoTranslator.translate(request.text, configuration: configuration)
+            os_log("[QuickLookTranslation] Running preview translation skill (%{public}d chars)", type: .info, request.text.count)
+            let translated = try await QuickLookAutoTranslator.translate(item: item, text: request.text, configuration: configuration)
             guard Task.isCancelled == false else { return }
             translationState = .translated(translated)
         } catch {
+            os_log("[QuickLookTranslation] Failed: %{public}@", type: .error, error.localizedDescription)
             guard Task.isCancelled == false else { return }
             translationState = .failed(error.localizedDescription)
         }
@@ -178,7 +220,7 @@ private struct ClipboardQuickLookTextContent: View {
 
 private enum QuickLookTranslationState: Equatable {
     case idle
-    case skipped
+    case skipped(String)
     case unavailable(String)
     case translating
     case translated(String)
@@ -189,11 +231,15 @@ private struct QuickLookTranslationRequest {
     let text: String
 
     init?(item: ClipboardItem, text sourceText: String) {
-        guard item.contentType == .text, item.hasRTF == false else {
+        guard item.contentType == .text || item.contentType == .code || item.contentType == .link else {
             return nil
         }
 
         let text = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.isEmpty == false, text.count <= 5_000 else {
+            return nil
+        }
+
         guard QuickLookAutoTranslator.shouldTranslate(text) else {
             return nil
         }
@@ -209,13 +255,18 @@ private enum QuickLookAutoTranslator {
         return settings.activeConfiguration
     }
 
-    static func translate(_ text: String, configuration: AIConfiguration) async throws -> String {
-        let prompt = """
-        Translate the following plain text into Simplified Chinese. If it is a single word, provide the most common Simplified Chinese translation. Preserve URLs, email addresses, code-like identifiers, names, and paragraph breaks. Output only the translation.
+    static func translate(item: ClipboardItem, text: String, configuration: AIConfiguration) async throws -> String {
+        let skill = AISkill(
+            name: String(localized: "Preview Translation"),
+            promptTemplate: """
+            Translate the following plain text into Simplified Chinese. If it is a single word, provide the most common Simplified Chinese translation. Preserve URLs, email addresses, code-like identifiers, names, and paragraph breaks. Output only the translation.
 
-        \(text)
-        """
-
+            \(text)
+            """,
+            supportedContentTypes: [.text, .code, .link],
+            outputMode: .openConversation
+        )
+        let prompt = try await AIExecutionService.shared.prompt(for: skill, item: item)
         return try await AIExecutionService.shared.send(
             messages: [AIChatMessage(role: "user", content: prompt)],
             configuration: configuration
@@ -223,9 +274,7 @@ private enum QuickLookAutoTranslator {
     }
 
     static func shouldTranslate(_ text: String) -> Bool {
-        guard text.isEmpty == false,
-              text.count <= 5_000,
-              isSimplifiedChinese(text) == false,
+        guard isSimplifiedChinese(text) == false,
               isLikelyStructuredOrCode(text) == false else {
             return false
         }

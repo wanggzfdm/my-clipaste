@@ -82,6 +82,7 @@ final class ClipboardViewModel: ObservableObject {
     var quickLookLoadGeneration: UInt = 0
     var quickLookRequestedItemID: UUID? = nil
     var autoPreviewTask: Task<Void, Never>? = nil
+    var autoPreviewDismissTask: Task<Void, Never>? = nil
     var autoPreviewPendingItemID: UUID? = nil
     var autoPreviewPresentedItemID: UUID? = nil
     nonisolated(unsafe) var keyDownMonitor: Any?

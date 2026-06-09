@@ -72,10 +72,21 @@ extension ClipboardViewModel {
         }
 
         if isHovering {
+            cancelAutoPreviewDismissTask()
             scheduleAutoPreview(for: item)
         } else {
             cancelPendingAutoPreview(for: item.id)
-            dismissAutoPreview(for: item.id)
+            scheduleAutoPreviewDismiss(for: item.id)
+        }
+    }
+
+    func handleAutoPreviewPopoverHover(for item: ClipboardItem, isHovering: Bool) {
+        guard autoPreviewPresentedItemID == item.id else { return }
+
+        if isHovering {
+            cancelAutoPreviewDismissTask()
+        } else {
+            scheduleAutoPreviewDismiss(for: item.id)
         }
     }
 
@@ -95,6 +106,7 @@ extension ClipboardViewModel {
 
     func dismissAutoPreviewIfNeeded() {
         cancelAutoPreviewTask()
+        cancelAutoPreviewDismissTask()
 
         guard autoPreviewPresentedItemID != nil else { return }
         autoPreviewPresentedItemID = nil
@@ -125,15 +137,34 @@ extension ClipboardViewModel {
         autoPreviewPendingItemID = nil
     }
 
+    private func scheduleAutoPreviewDismiss(for itemID: UUID) {
+        guard autoPreviewPresentedItemID == itemID else { return }
+
+        autoPreviewDismissTask?.cancel()
+        autoPreviewDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(550))
+            guard let self, !Task.isCancelled else { return }
+            self.dismissAutoPreview(for: itemID)
+        }
+    }
+
+    private func cancelAutoPreviewDismissTask() {
+        autoPreviewDismissTask?.cancel()
+        autoPreviewDismissTask = nil
+    }
+
     private func dismissAutoPreview(for itemID: UUID) {
         guard autoPreviewPresentedItemID == itemID else { return }
+        cancelAutoPreviewDismissTask()
         autoPreviewPresentedItemID = nil
         dismissQuickLook()
     }
 
     private func clearAutoPreviewState() {
         autoPreviewTask?.cancel()
+        autoPreviewDismissTask?.cancel()
         autoPreviewTask = nil
+        autoPreviewDismissTask = nil
         autoPreviewPendingItemID = nil
         autoPreviewPresentedItemID = nil
     }

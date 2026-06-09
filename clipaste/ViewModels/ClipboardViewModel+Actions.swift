@@ -475,6 +475,12 @@ extension ClipboardViewModel {
         )
         runAISkill(translateSkill, for: item)
     }
+
+    func copyQuickLookTranslation(_ text: String) {
+        PasteEngine.shared.writePlainTextToPasteboard(text: text)
+        playCopySound()
+        showOperationNotice(String(localized: "Copied"))
+    }
 }
 
 private extension ClipboardViewModel {

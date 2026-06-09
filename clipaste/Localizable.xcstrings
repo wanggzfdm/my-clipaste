@@ -8396,48 +8396,48 @@
         }
       }
     },
-    "Hold the quick paste modifier to reveal 1…9 shortcuts. Hold the plain text modifier while copying or pasting to strip formatting." : {
+    "Hold the quick paste modifier to reveal 1…9 shortcuts. Hold the plain text modifier while copying or pasting to strip formatting. Hold the preview modifier to trigger preview." : {
       "localizations" : {
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Halte die Schnell-Einfügen-Modifikatortaste gedrückt, um die Kurzbefehle 1…9 anzuzeigen. Halte beim Kopieren oder Einfügen die Nur-Text-Modifikatortaste gedrückt, um die Formatierung zu entfernen."
+            "value" : "Halte die Schnell-Einfügen-Modifikatortaste gedrückt, um die Kurzbefehle 1…9 anzuzeigen. Halte beim Kopieren oder Einfügen die Nur-Text-Modifikatortaste gedrückt, um die Formatierung zu entfernen. Halte die Vorschau-Modifikatortaste gedrückt, um die Vorschau auszulösen."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hold the quick paste modifier to reveal 1…9 shortcuts. Hold the plain text modifier while copying or pasting to strip formatting."
+            "value" : "Hold the quick paste modifier to reveal 1…9 shortcuts. Hold the plain text modifier while copying or pasting to strip formatting. Hold the preview modifier to trigger preview."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Maintenez la touche modificatrice de collage rapide pour afficher les raccourcis 1…9. Maintenez la touche modificatrice de texte brut pendant la copie ou le collage pour supprimer la mise en forme."
+            "value" : "Maintenez la touche modificatrice de collage rapide pour afficher les raccourcis 1…9. Maintenez la touche modificatrice de texte brut pendant la copie ou le collage pour supprimer la mise en forme. Maintenez la touche modificatrice d’aperçu pour déclencher l’aperçu."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "クイック貼り付け修飾キーを押し続けると 1…9 のショートカットが表示されます。コピーまたは貼り付け時にプレーンテキスト修飾キーを押し続けると書式を除去できます。"
+            "value" : "クイック貼り付け修飾キーを押し続けると 1…9 のショートカットが表示されます。コピーまたは貼り付け時にプレーンテキスト修飾キーを押し続けると書式を除去できます。プレビュー修飾キーを押し続けるとプレビューを実行できます。"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "빠른 붙여넣기 보조키를 길게 누르면 1…9 단축키가 표시됩니다. 복사 또는 붙여넣기 중에 일반 텍스트 보조키를 누르고 있으면 서식이 제거됩니다."
+            "value" : "빠른 붙여넣기 보조키를 길게 누르면 1…9 단축키가 표시됩니다. 복사 또는 붙여넣기 중에 일반 텍스트 보조키를 누르고 있으면 서식이 제거됩니다. 미리보기 보조키를 누르고 있으면 미리보기가 실행됩니다."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按住快速粘贴修饰键可显示 1…9 快捷键。复制或粘贴时按住纯文本修饰键可剥离格式。"
+            "value" : "按住快速粘贴修饰键可显示 1…9 快捷键。复制或粘贴时按住纯文本修饰键可剥离格式。按住预览修饰键可触发预览。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "按住快速貼上修飾鍵可顯示 1…9 快捷鍵。拷貝或貼上時按住純文字修飾鍵可剝離格式。"
+            "value" : "按住快速貼上修飾鍵可顯示 1…9 快捷鍵。拷貝或貼上時按住純文字修飾鍵可剝離格式。按住預覽修飾鍵可觸發預覽。"
           }
         }
       }
