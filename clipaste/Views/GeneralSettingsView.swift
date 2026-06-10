@@ -12,6 +12,8 @@ struct GeneralSettingsView: View {
     @AppStorage("hideMenuBarIcon") private var hideMenuBarIcon = false
     @AppStorage("singleClickPaste") private var singleClickPaste = true
 
+    @AppStorage("editorType") private var editorType: EditorType = .lightweight
+
     @State private var showingClearAlert = false
 
     var body: some View {
@@ -54,6 +56,12 @@ private extension GeneralSettingsView {
 
             Toggle(isOn: $singleClickPaste) {
                 Text("单击复制，双击粘贴")
+            }
+
+            Picker("编辑器类型", selection: $editorType) {
+                ForEach(EditorType.allCases) { type in
+                    Text(type.localizedTitle).tag(type)
+                }
             }
 
         } header: {

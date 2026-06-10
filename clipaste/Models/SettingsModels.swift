@@ -281,3 +281,17 @@ enum HorizontalPanelPresentationStyle: String, CaseIterable, Identifiable {
         }
     }
 }
+
+enum EditorType: String, CaseIterable, Identifiable {
+    case lightweight = "lightweight"
+    case native = "native"
+    
+    var id: String { rawValue }
+    
+    var localizedTitle: LocalizedStringResource {
+        switch self {
+        case .lightweight: return LocalizedStringResource("轻量级编辑器")
+        case .native: return LocalizedStringResource("原生编辑器")
+        }
+    }
+}

@@ -220,7 +220,47 @@ extension ClipboardViewModel {
     }
 
     func editItemContent(item: ClipboardItem) {
-        EditWindowManager.shared.openEditor(for: item, viewModel: self)
+        let editorType = EditorType(rawValue: UserDefaults.standard.string(forKey: "editorType") ?? "lightweight") ?? .lightweight
+        
+        switch editorType {
+        case .lightweight:
+            editItemContentSimple(item: item)
+        case .native:
+            EditWindowManager.shared.openEditor(for: item, viewModel: self)
+        }
+    }
+
+    @MainActor
+    func editItemContentSimple(item: ClipboardItem) {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 580, height: 480),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "编辑内容"
+        window.center()
+        window.isReleasedWhenClosed = false
+        
+        let editView = SimpleTextEditorSheet(item: item) { [weak self] newText, newRTFData in
+            guard let self = self else { return }
+            
+            // 保存逻辑
+            let plainText = newText
+            let rtfData = newRTFData
+            
+            // ViewModel 更新
+            self.saveEditedItem(item, newText: plainText)
+            
+            // RTF 持久化
+            if let rtfData {
+                StorageManager.shared.updateRecordText(hash: item.contentHash, newText: plainText, newRTFData: rtfData)
+            }
+            ListRenderEngine.shared.invalidate(id: item.id)
+        }
+        
+        window.contentViewController = NSHostingController(rootView: editView)
+        window.makeKeyAndOrderFront(nil)
     }
 
     func recognizeTextFromImage(item: ClipboardItem) {

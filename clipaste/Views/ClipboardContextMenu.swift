@@ -288,7 +288,6 @@ extension View {
                 Label("Edit Content", systemImage: "square.and.pencil")
             }
         }
-
         Button {
             viewModel.renameItem(item: item)
         } label: {
