@@ -62,6 +62,7 @@ private struct ClipboardItemTapBehaviorModifier: ViewModifier {
         } else if singleClickPaste {
             content
                 .simultaneousGesture(TapGesture().onEnded {
+                    viewModel.handlePrimaryClickSelection(for: item.id)
                     viewModel.copyToClipboard(item: item)
                 })
                 .simultaneousGesture(TapGesture(count: 2).onEnded {

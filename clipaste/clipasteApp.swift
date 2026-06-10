@@ -47,6 +47,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             presentOnboardingWindow()
         }
 
+        PanelShortcutStore.migrateLegacyKeyboardShortcutsIfNeeded()
         registerGlobalShortcutsIfNeeded()
 
         // Verify accessibility permission so KeyboardShortcuts can use the privileged

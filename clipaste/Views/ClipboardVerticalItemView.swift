@@ -22,7 +22,6 @@ struct ClipboardVerticalItemView: View {
 
     @AppStorage("clipboardLayout") private var clipboardLayout: AppLayoutMode = .horizontal
     @AppStorage("appAccentColor") private var appAccentColor: AppAccentColor = .defaultValue
-    @AppStorage("autoPreview") private var autoPreview = false
 
     @State private var isHovering = false
     @State private var richPreviewText: AttributedString?
@@ -57,11 +56,11 @@ struct ClipboardVerticalItemView: View {
     }
 
     private var shouldTriggerQuickLookPreview: Bool {
-        allowsAutoPreview && autoPreview && viewModel.isPreviewModifierHeld && !usesPreviewPanel
+        false
     }
 
     private var richTextTaskKey: String {
-        "\(item.id.uuidString)-\(item.contentHash)-\(item.hasRTF)"
+        "\(item.id.uuidString)-\(item.contentHash)-\(item.hasRTF)-search:\(viewModel.isSearchFilteringActive)"
     }
 
     private var rowFillStyle: AnyShapeStyle {
@@ -145,29 +144,12 @@ struct ClipboardVerticalItemView: View {
             .shareable(item: item, viewModel: viewModel)
             .clipboardContextMenu(for: item, viewModel: viewModel)
             .onHover { hovering in
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.9, blendDuration: 0.1)) {
+                var transaction = Transaction()
+                transaction.disablesAnimations = viewModel.isSearchFilteringActive
+                withTransaction(transaction) {
                     isHovering = hovering
                 }
                 onHoverChange?(hovering)
-                viewModel.handleAutoPreviewHover(
-                    for: item,
-                    isHovering: hovering,
-                    isEnabled: shouldTriggerQuickLookPreview
-                )
-            }
-            .onChange(of: viewModel.isPreviewModifierHeld) { _, _ in
-                viewModel.handleAutoPreviewHover(
-                    for: item,
-                    isHovering: isHovering,
-                    isEnabled: shouldTriggerQuickLookPreview
-                )
-            }
-            .onChange(of: autoPreview) { _, _ in
-                viewModel.handleAutoPreviewHover(
-                    for: item,
-                    isHovering: isHovering,
-                    isEnabled: shouldTriggerQuickLookPreview
-                )
             }
             .animation(nil, value: showsQuickPasteBadge)
             .onDrag {
@@ -177,20 +159,6 @@ struct ClipboardVerticalItemView: View {
                 ClipboardDragPreview(item: item)
             }
             .clipboardItemActions(for: item, viewModel: viewModel)
-            // 空格键 QuickLook：以本卡片为锚点弹出原生气泡预览
-            .popover(
-                isPresented: Binding(
-                    get: { viewModel.quickLookItem?.id == item.id },
-                    set: { isShowing in
-                        if !isShowing, viewModel.quickLookItem?.id == item.id {
-                            viewModel.dismissQuickLook()
-                        }
-                    }
-                ),
-                arrowEdge: .trailing  // 气泡在卡片左侧弹出，箭头指向卡片
-            ) {
-                ClipboardQuickLookView(item: item, viewModel: viewModel)
-            }
     }
 
     @ViewBuilder
@@ -427,9 +395,19 @@ struct ClipboardVerticalItemView: View {
 
     @MainActor
     private func refreshRichPreviewText() async {
+        guard viewModel.isSearchFilteringActive == false else {
+            richPreviewText = nil
+            return
+        }
+
         richPreviewText = ListRenderEngine.shared.cachedText(for: item.id)
 
         guard richPreviewText == nil else {
+            return
+        }
+
+        try? await Task.sleep(nanoseconds: 90_000_000)
+        guard !Task.isCancelled else {
             return
         }
 

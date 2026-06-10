@@ -4,34 +4,34 @@ import Carbon.HIToolbox
 import Foundation
 import KeyboardShortcuts
 
-nonisolated final class ShortcutRecorderRowViewModel: ObservableObject {
+nonisolated final class PanelShortcutRecorderRowViewModel: ObservableObject {
     @Published private(set) var shortcut: KeyboardShortcuts.Shortcut?
     @Published private(set) var isRecording = false
 
-    let name: KeyboardShortcuts.Name
-    private let allowsSingleKey: Bool
+    let action: PanelShortcutAction
 
     private var cancellables = Set<AnyCancellable>()
     private var eventMonitor: Any?
-    private static let shortcutDidChangeNotification = Notification.Name("KeyboardShortcuts_shortcutByNameDidChange")
     private static let functionKeys: Set<KeyboardShortcuts.Key> = [
         .f1, .f2, .f3, .f4, .f5, .f6, .f7, .f8, .f9, .f10,
         .f11, .f12, .f13, .f14, .f15, .f16, .f17, .f18, .f19, .f20
     ]
 
-    init(name: KeyboardShortcuts.Name, allowsSingleKey: Bool = false) {
-        self.name = name
-        self.allowsSingleKey = allowsSingleKey
-        self.shortcut = name.shortcut
+    init(action: PanelShortcutAction) {
+        self.action = action
+        self.shortcut = PanelShortcutStore.shortcut(for: action)
 
-        NotificationCenter.default.publisher(for: Self.shortcutDidChangeNotification)
+        NotificationCenter.default.publisher(for: .panelShortcutDidChange)
             .receive(on: RunLoop.main)
-            .compactMap { $0.userInfo?["name"] as? KeyboardShortcuts.Name }
-            .filter { [name] changedName in
-                changedName == name
-            }
-            .sink { [weak self] _ in
-                self?.shortcut = name.shortcut
+            .sink { [weak self] notification in
+                guard let self else { return }
+
+                if let rawAction = notification.userInfo?["action"] as? String,
+                   rawAction != self.action.rawValue {
+                    return
+                }
+
+                self.shortcut = PanelShortcutStore.shortcut(for: self.action)
             }
             .store(in: &cancellables)
     }
@@ -41,17 +41,13 @@ nonisolated final class ShortcutRecorderRowViewModel: ObservableObject {
     }
 
     var canRestoreDefault: Bool {
-        guard let defaultShortcut = name.defaultShortcut else {
-            return false
-        }
-
-        return shortcut != defaultShortcut
+        shortcut != action.defaultShortcut
     }
 
     func restoreDefault() {
         cancelRecording()
-        KeyboardShortcuts.reset(name)
-        shortcut = name.shortcut
+        PanelShortcutStore.reset([action])
+        shortcut = PanelShortcutStore.shortcut(for: action)
     }
 
     func beginRecording() {
@@ -78,7 +74,7 @@ nonisolated final class ShortcutRecorderRowViewModel: ObservableObject {
     }
 
     func clearShortcut() {
-        name.shortcut = nil
+        PanelShortcutStore.setShortcut(nil, for: action)
         shortcut = nil
     }
 
@@ -137,14 +133,14 @@ nonisolated final class ShortcutRecorderRowViewModel: ObservableObject {
               Self.isShortcutAllowed(
                 shortcut: shortcut,
                 modifiers: modifiers,
-                allowsSingleKey: allowsSingleKey
+                allowsSingleKey: action.allowsSingleKey
               ) else {
             NSSound.beep()
             return nil
         }
 
-        name.shortcut = shortcut
-        self.shortcut = name.shortcut
+        PanelShortcutStore.setShortcut(shortcut, for: action)
+        self.shortcut = PanelShortcutStore.shortcut(for: action)
         cancelRecording()
 
         return nil

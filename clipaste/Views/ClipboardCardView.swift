@@ -12,7 +12,6 @@ struct ClipboardCardView: View {
     @State private var isHovered = false
     @State private var richPreviewText: AttributedString?
     @AppStorage("appAccentColor") private var appAccentColor: AppAccentColor = .defaultValue
-    @AppStorage("autoPreview") private var autoPreview = false
 
     private var isSelected: Bool {
         viewModel.selectedItemIDs.contains(item.id)
@@ -34,11 +33,11 @@ struct ClipboardCardView: View {
     }
 
     private var shouldTriggerPreview: Bool {
-        autoPreview && viewModel.isPreviewModifierHeld
+        false
     }
 
     private var richTextTaskKey: String {
-        "\(item.id.uuidString)-\(item.contentHash)-\(item.hasRTF)"
+        "\(item.id.uuidString)-\(item.contentHash)-\(item.hasRTF)-search:\(viewModel.isSearchFilteringActive)"
     }
 
     private var headerTextColor: Color {
@@ -190,20 +189,6 @@ struct ClipboardCardView: View {
         .overlay(alignment: .bottomTrailing) {
             bottomAccessory
         }
-        // 空格键 QuickLook 气泡（箭头朝下，挂在卡片顶部）
-        .popover(
-            isPresented: Binding(
-                get: { viewModel.quickLookItem?.id == item.id },
-                set: { isShowing in
-                    if !isShowing, viewModel.quickLookItem?.id == item.id {
-                        viewModel.dismissQuickLook()
-                    }
-                }
-            ),
-            arrowEdge: .bottom
-        ) {
-            ClipboardQuickLookView(item: item, viewModel: viewModel)
-        }
         // 分享锚点：用 background 捕获 NSView + onChange 触发分享
         .modifier(OptionalShareModifier(item: item, viewModel: viewModel))
         .task(id: richTextTaskKey) {
@@ -219,25 +204,6 @@ struct ClipboardCardView: View {
                 }
             }
 
-            viewModel.handleAutoPreviewHover(
-                for: item,
-                isHovering: hovering,
-                isEnabled: shouldTriggerPreview
-            )
-        }
-        .onChange(of: viewModel.isPreviewModifierHeld) { _, _ in
-            viewModel.handleAutoPreviewHover(
-                for: item,
-                isHovering: isHovered,
-                isEnabled: shouldTriggerPreview
-            )
-        }
-        .onChange(of: autoPreview) { _, _ in
-            viewModel.handleAutoPreviewHover(
-                for: item,
-                isHovering: isHovered,
-                isEnabled: shouldTriggerPreview
-            )
         }
         .onDrag {
             viewModel.draggedItemId = item.id
@@ -494,6 +460,11 @@ struct ClipboardCardView: View {
 
     @MainActor
     private func refreshRichPreviewText() async {
+        guard viewModel.isSearchFilteringActive == false else {
+            richPreviewText = nil
+            return
+        }
+
         richPreviewText = ListRenderEngine.shared.cachedText(for: item.id)
 
         guard richPreviewText == nil else {

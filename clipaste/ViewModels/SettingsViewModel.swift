@@ -46,10 +46,6 @@ final class SettingsViewModel: @preconcurrency ObservableObject {
         willSet { objectWillChange.send() }
     }
 
-    @AppStorage(ModifierKey.previewDefaultsKey) var previewModifier: ModifierKey = .option {
-        willSet { objectWillChange.send() }
-    }
-
     @AppStorage("isCopySoundEnabled") var isCopySoundEnabled: Bool = true {
         willSet { objectWillChange.send() }
     }
@@ -120,7 +116,6 @@ final class SettingsViewModel: @preconcurrency ObservableObject {
         ModifierKey.migrateStoredPreferences()
         quickPasteModifier = ModifierKey.quickPastePreference()
         plainTextModifier = ModifierKey.plainTextPreference()
-        previewModifier = ModifierKey.previewPreference()
         bindPreferences()
         reloadIgnoredApps()
         preferencesStore.refreshLaunchAtLoginStatus()

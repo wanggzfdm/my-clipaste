@@ -11,7 +11,6 @@ struct GeneralSettingsView: View {
     private var horizontalPanelPresentationStyle: HorizontalPanelPresentationStyle = .defaultValue
     @AppStorage("hideMenuBarIcon") private var hideMenuBarIcon = false
     @AppStorage("singleClickPaste") private var singleClickPaste = true
-    @AppStorage("autoPreview") private var autoPreview = false
 
     @State private var showingClearAlert = false
 
@@ -57,9 +56,6 @@ private extension GeneralSettingsView {
                 Text("单击复制，双击粘贴")
             }
 
-            Toggle(isOn: $autoPreview) {
-                Text("Auto Preview")
-            }
         } header: {
             SettingsSectionHeader(title: "Basic")
         }

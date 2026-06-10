@@ -16,8 +16,6 @@ struct SearchResultsTransitionContainer<Content: View>: View {
 
     var body: some View {
         content
-            .opacity(contentOpacity)
-            .offset(y: verticalOffset)
             .onChange(of: token) { _, _ in
                 runTransitionIfNeeded()
             }
@@ -44,25 +42,7 @@ struct SearchResultsTransitionContainer<Content: View>: View {
     }
 
     private func runTransitionIfNeeded() {
-        guard isActive else {
-            isSettlingContent = false
-            return
-        }
-
         transitionGeneration &+= 1
-        let generation = transitionGeneration
-
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            isSettlingContent = true
-        }
-
-        DispatchQueue.main.async {
-            guard transitionGeneration == generation else { return }
-            withAnimation(animation) {
-                isSettlingContent = false
-            }
-        }
+        isSettlingContent = false
     }
 }

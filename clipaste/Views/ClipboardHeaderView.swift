@@ -188,7 +188,8 @@ struct ClipboardHeaderView: View {
     }
 
     private var isHorizontalSearchExpanded: Bool {
-        focusedField == .searchBar || !viewModel.searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        viewModel.isSearchCompositionActive ||
+            !viewModel.searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private var horizontalSearchBarWidth: CGFloat {
@@ -204,11 +205,11 @@ struct ClipboardHeaderView: View {
     }
 
     private var horizontalSearchWidthAnimation: Animation {
-        .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.24)
+        .linear(duration: 0.01)
     }
 
     private var horizontalSearchContentAnimation: Animation {
-        .easeOut(duration: 0.18)
+        .linear(duration: 0.01)
     }
 
     private var horizontalSearchBar: some View {
@@ -234,19 +235,16 @@ struct ClipboardHeaderView: View {
             .offset(x: isHorizontalSearchExpanded ? 0 : -4)
             .clipped()
             .allowsHitTesting(isHorizontalSearchExpanded)
-            .animation(horizontalSearchContentAnimation, value: isHorizontalSearchExpanded)
         }
         .frame(height: HorizontalSearchLayout.fieldHeight)
         .frame(width: horizontalSearchBarWidth, alignment: .leading)
         .background(Color.clear.background(.regularMaterial))
         .overlay {
             Capsule()
-                .strokeBorder(searchFieldFocusColor, lineWidth: 1)
+                .strokeBorder(isHorizontalSearchExpanded ? searchFieldFocusColor : .clear, lineWidth: 1)
         }
         .clipShape(Capsule())
-        .shadow(color: searchFieldShadowColor, radius: focusedField == .searchBar ? 8 : 4, y: 2)
-        .animation(horizontalSearchWidthAnimation, value: isHorizontalSearchExpanded)
-        .animation(.easeInOut(duration: 0.18), value: viewModel.searchInput.isEmpty)
+        .shadow(color: searchFieldShadowColor, radius: isHorizontalSearchExpanded ? 8 : 4, y: 2)
         .help(isHorizontalSearchExpanded ? Text("搜索历史") : Text("搜索"))
     }
 
@@ -930,7 +928,13 @@ struct ClipboardHeaderView: View {
     private var searchTextBinding: Binding<String> {
         Binding(
             get: { viewModel.searchInput },
-            set: { viewModel.searchInput = $0 }
+            set: { newValue in
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    viewModel.searchInput = newValue
+                }
+            }
         )
     }
 

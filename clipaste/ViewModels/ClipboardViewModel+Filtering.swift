@@ -9,8 +9,13 @@ extension ClipboardViewModel {
     }
 
     func setupFilterPipeline() {
-        let searchQueries = $searchInput
-            .map { query -> AnyPublisher<String, Never> in
+        let searchQueries = Publishers.CombineLatest($searchInput, $isSearchCompositionActive)
+            .map { query, isComposing -> AnyPublisher<String, Never> in
+                if isComposing {
+                    return Empty()
+                        .eraseToAnyPublisher()
+                }
+
                 let isEffectivelyEmpty = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
                 if isEffectivelyEmpty {
@@ -19,7 +24,7 @@ extension ClipboardViewModel {
                 }
 
                 return Just(query)
-                    .delay(for: .milliseconds(200), scheduler: DispatchQueue.main)
+                    .delay(for: .milliseconds(80), scheduler: DispatchQueue.main)
                     .eraseToAnyPublisher()
             }
             .switchToLatest()

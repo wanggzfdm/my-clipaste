@@ -69,6 +69,7 @@ struct ClipboardMainView: View {
                 )
             )
             .background(WindowAppearanceObserver(theme: appTheme))
+            .background(ClipboardQuickLookWindowPresenter(viewModel: viewModel))
             .overlay(alignment: .top) {
                 if let operationNotice = viewModel.operationNotice {
                     ClipboardOperationNoticeView(message: operationNotice)
@@ -87,18 +88,20 @@ struct ClipboardMainView: View {
                     name: .clipboardLayoutModeChanged,
                     object: clipboardLayout
                 )
-                requestDefaultListFocus()
+                requestDefaultSearchFocus()
             }
             .onChange(of: focusedField) { _, newValue in
                 viewModel.panelFocusField = newValue
 
                 guard newValue == .searchBar else {
                     searchService.isTextFieldFocused = false
+                    viewModel.isSearchCompositionActive = false
                     return
                 }
 
                 DispatchQueue.main.async {
                     searchService.isTextFieldFocused = isActiveTextInputResponder
+                    syncSearchCompositionState()
                 }
             }
             .onChange(of: displayedItemIDs) { _, _ in
@@ -111,6 +114,11 @@ struct ClipboardMainView: View {
                 }
             }
             .onChange(of: viewModel.searchInput) { oldValue, newValue in
+                syncSearchCompositionState()
+                DispatchQueue.main.async {
+                    syncSearchCompositionState()
+                }
+
                 guard !oldValue.isEmpty, newValue.isEmpty else { return }
                 requestListFocusAfterSearchExit()
             }
@@ -128,7 +136,7 @@ struct ClipboardMainView: View {
                     focusSearchField(collapseSelectionToInsertionPoint: true)
                     return true
                 }
-                requestDefaultListFocus()
+                requestDefaultSearchFocus()
             }
             .onDisappear {
                 searchService.onInterceptedKey = nil
@@ -216,6 +224,14 @@ struct ClipboardMainView: View {
     }
 
     private func focusSearchField(collapseSelectionToInsertionPoint: Bool = false) {
+        if focusedField == .searchBar, isActiveTextInputResponder {
+            searchService.isTextFieldFocused = true
+            if collapseSelectionToInsertionPoint {
+                collapseActiveTextSelectionToInsertionPoint()
+            }
+            return
+        }
+
         pendingListFocusGeneration &+= 1
         pendingListFocusRequest = nil
         pendingSearchFocusGeneration &+= 1
@@ -253,7 +269,7 @@ struct ClipboardMainView: View {
         viewModel.startKeyboardMonitoring()
         // 先启动面板级键盘监听，再启动盲打搜索，确保特殊按键优先被 ViewModel 消费。
         searchService.start()
-        requestDefaultListFocus()
+        requestDefaultSearchFocus()
     }
 
     private func deactivatePanelInputHandling() {
@@ -275,17 +291,21 @@ struct ClipboardMainView: View {
         deactivatePanelInputHandling()
     }
 
-    private func requestDefaultListFocus() {
+    private func requestDefaultSearchFocus() {
         pendingListFocusGeneration &+= 1
-        pendingSearchFocusGeneration &+= 1
-        pendingListFocusRequest = .preserveSelection
-        focusedField = nil
-        searchService.isTextFieldFocused = false
+        pendingListFocusRequest = nil
         resetPendingBlindTypedSearchInput()
 
-        DispatchQueue.main.async {
-            _ = applyPendingListFocusIfPossible()
+        if displayedItems.isEmpty == false {
+            viewModel.ensureListSelection()
         }
+
+        if focusedField == .searchBar, isActiveTextInputResponder {
+            searchService.isTextFieldFocused = true
+            return
+        }
+
+        focusSearchField()
     }
 
     private func requestListFocusAfterSearchExit() {
@@ -439,6 +459,13 @@ struct ClipboardMainView: View {
 
         let stringLength = textView.string.count
         textView.setSelectedRange(NSRange(location: stringLength, length: 0))
+    }
+
+    private func syncSearchCompositionState() {
+        let isComposing = focusedField == .searchBar && (activeTextInputView?.hasMarkedText() == true)
+        if viewModel.isSearchCompositionActive != isComposing {
+            viewModel.isSearchCompositionActive = isComposing
+        }
     }
 
     private var isActiveTextInputResponder: Bool {

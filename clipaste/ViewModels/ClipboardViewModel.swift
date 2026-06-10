@@ -44,6 +44,7 @@ final class ClipboardViewModel: ObservableObject {
     @Published var displayedItemIDs: [UUID] = []
     @Published var obsidianSearchItems: [ClipboardItem] = []
     @Published var searchInput: String = ""
+    @Published var isSearchCompositionActive: Bool = false
     @Published var activeSearchQuery: String = ""
     @Published var currentFilter: ClipboardContentType? = nil
     @Published var selectedBuiltInGroup: ClipboardBuiltInGroup? = nil
@@ -66,10 +67,8 @@ final class ClipboardViewModel: ObservableObject {
     @Published var titleEditorItem: ClipboardItem? = nil
     @Published var quickPasteModifier: ModifierKey = ModifierKey.quickPastePreference()
     @Published var plainTextModifier: ModifierKey = ModifierKey.plainTextPreference()
-    @Published var previewModifier: ModifierKey = ModifierKey.previewPreference()
     @Published var isQuickPasteModifierHeld: Bool = false
     @Published var isPlainTextModifierHeld: Bool = false
-    @Published var isPreviewModifierHeld: Bool = false
     @AppStorage("enable_smart_groups") var isSmartGroupsEnabled: Bool = true
     @AppStorage("pasteTextFormat") var pasteTextFormat: PasteTextFormat = .original
     var panelFocusField: ClipboardPanelFocusField? = nil

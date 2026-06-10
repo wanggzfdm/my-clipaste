@@ -6,7 +6,6 @@ struct ClipboardHorizontalView: View {
     @FocusState var focusedField: ClipboardPanelFocusField?
     @AppStorage("requireCmdToDelete") private var requireCmdToDelete: Bool = false
     @AppStorage("singleClickPaste") private var singleClickPaste = true
-    @AppStorage("autoPreview") private var autoPreview = false
     @State private var quickPasteIndexesByItemID: [UUID: Int] = [:]
 
     private let quickPasteCoordinateSpaceName = "ClipboardHorizontalQuickPasteSpace"
@@ -66,15 +65,6 @@ struct ClipboardHorizontalView: View {
                         animated: request.animated
                     )
                 }
-                .onChange(of: viewModel.selectedItemIDs) { _, _ in
-                    viewModel.presentAutoPreviewForSelectionIfNeeded(isEnabled: shouldTriggerPreview)
-                }
-                .onChange(of: autoPreview) { _, _ in
-                    viewModel.presentAutoPreviewForSelectionIfNeeded(isEnabled: shouldTriggerPreview)
-                }
-                .onChange(of: viewModel.isPreviewModifierHeld) { _, _ in
-                    viewModel.presentAutoPreviewForSelectionIfNeeded(isEnabled: shouldTriggerPreview)
-                }
                 .onChange(of: viewModel.isQuickPasteModifierHeld) { _, isHeld in
                     guard !isHeld, !quickPasteIndexesByItemID.isEmpty else { return }
                     quickPasteIndexesByItemID = [:]
@@ -90,10 +80,6 @@ struct ClipboardHorizontalView: View {
         } else {
             Text("双击粘贴到当前应用")
         }
-    }
-
-    private var shouldTriggerPreview: Bool {
-        autoPreview && viewModel.isPreviewModifierHeld
     }
 
     private func updateQuickPasteIndexes(

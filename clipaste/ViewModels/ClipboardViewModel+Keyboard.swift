@@ -1,6 +1,5 @@
 import AppKit
 import Combine
-import KeyboardShortcuts
 import SwiftUI
 
 extension ClipboardViewModel {
@@ -57,7 +56,6 @@ extension ClipboardViewModel {
     var reservedSearchModifierFlags: NSEvent.ModifierFlags {
         quickPasteModifier.eventFlags
             .union(plainTextModifier.eventFlags)
-            .union(previewModifier.eventFlags)
     }
 
     func shouldStartTypeToSearch(with event: NSEvent) -> Bool {
@@ -119,11 +117,6 @@ extension ClipboardViewModel {
             plainTextModifier = updatedPlainTextModifier
         }
 
-        let updatedPreviewModifier = ModifierKey.previewPreference()
-        if previewModifier != updatedPreviewModifier {
-            previewModifier = updatedPreviewModifier
-        }
-
         updateModifierFlags(from: currentModifierFlags)
     }
 
@@ -140,13 +133,6 @@ extension ClipboardViewModel {
             isPlainTextModifierHeld = plainTextHeld
         }
 
-        let previewHeld = currentModifierFlags.contains(previewModifier.eventFlags)
-        if isPreviewModifierHeld != previewHeld {
-            isPreviewModifierHeld = previewHeld
-            if previewHeld == false {
-                dismissAutoPreviewIfNeeded()
-            }
-        }
     }
 
     func resetModifierTracking() {
@@ -157,15 +143,73 @@ extension ClipboardViewModel {
         if isPlainTextModifierHeld {
             isPlainTextModifierHeld = false
         }
-        if isPreviewModifierHeld {
-            isPreviewModifierHeld = false
-        }
     }
 
     func handlePanelKeyDown(_ event: NSEvent) -> NSEvent? {
-        updateModifierFlags(from: event.modifierFlags)
-
         let keyCode = event.keyCode
+
+        if hasActiveTextInputResponder, panelFocusField != .clipList {
+            if keyCode == 53 {
+                if isQuickLookActive {
+                    toggleQuickLook()
+                } else if !searchInput.isEmpty {
+                    searchInput = ""
+                } else {
+                    NotificationCenter.default.post(name: NSNotification.Name("HidePanelForce"), object: nil)
+                }
+                return nil
+            }
+
+            if panelFocusField == .searchBar, isSearchInputEffectivelyEmpty {
+                if PanelShortcutStore.matches(event, action: .previewSelection) {
+                    if let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
+                       textView.hasMarkedText() {
+                        return event
+                    }
+
+                    if !selectedItemIDs.isEmpty || isQuickLookActive {
+                        toggleQuickLook()
+                        return nil
+                    }
+                    return event
+                }
+
+                if keyCode == 36 {
+                    if isQuickLookActive {
+                        toggleQuickLook()
+                        return nil
+                    }
+
+                    if let firstID = selectedItemIDs.first,
+                       let item = displayedItemsForInteraction.first(where: { $0.id == firstID }) {
+                        pasteToActiveApp(item: item)
+                    } else if let first = displayedItemsForInteraction.first {
+                        pasteToActiveApp(item: first)
+                    }
+                    return nil
+                }
+
+                if isPlainNavigationEvent(event),
+                   !isQuickLookActive,
+                   let direction = navigationDirection(for: keyCode) {
+                    moveSelection(direction: direction)
+                    return nil
+                }
+            }
+
+            if isPlainNavigationEvent(event),
+               !isQuickLookActive,
+               let direction = navigationDirection(for: keyCode),
+               shouldRouteSearchArrowNavigation {
+                NotificationCenter.default.post(name: .focusListIntent, object: nil)
+                moveSelection(direction: direction)
+                return nil
+            }
+
+            return event
+        }
+
+        updateModifierFlags(from: event.modifierFlags)
 
         if keyCode == 53 {
             if isQuickLookActive {
@@ -178,13 +222,8 @@ extension ClipboardViewModel {
             return nil
         }
 
-        if keyCode == 49 {
-            if let textView = NSApp.keyWindow?.firstResponder as? NSTextView, textView.hasMarkedText() {
-                return event
-            }
-
-            if let responder = NSApp.keyWindow?.firstResponder,
-               responder is NSTextView || responder is NSTextField {
+        if matchesPanelShortcut(event, action: .previewSelection) {
+            if shouldProtectPanelTextInput {
                 return event
             }
 
@@ -244,27 +283,27 @@ extension ClipboardViewModel {
             return nil
         }
 
-        if matchesPanelShortcut(event, name: .toggleVerticalClipboard) {
+        if matchesPanelShortcut(event, action: .toggleVerticalClipboard) {
             togglePanelLayoutShortcut()
             return nil
         }
 
-        if matchesPanelShortcut(event, name: .nextList) {
+        if matchesPanelShortcut(event, action: .nextList) {
             selectNextGroup()
             return nil
         }
 
-        if matchesPanelShortcut(event, name: .prevList) {
+        if matchesPanelShortcut(event, action: .prevList) {
             selectPreviousGroup()
             return nil
         }
 
-        if matchesPanelShortcut(event, name: .toggleFavoriteSelection) {
+        if matchesPanelShortcut(event, action: .toggleFavoriteSelection) {
             toggleFavoriteForSelection()
             return nil
         }
 
-        if matchesPanelShortcut(event, name: .clearHistory) {
+        if matchesPanelShortcut(event, action: .clearHistory) {
             StorageManager.shared.clearUnpinnedHistory()
             return nil
         }
@@ -294,6 +333,10 @@ extension ClipboardViewModel {
 }
 
 private extension ClipboardViewModel {
+    var isSearchInputEffectivelyEmpty: Bool {
+        searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var shouldRouteSearchArrowNavigation: Bool {
         guard panelFocusField == .searchBar else {
             return false
@@ -323,16 +366,25 @@ private extension ClipboardViewModel {
         return responder is NSTextView || responder is NSTextField
     }
 
-    func matchesPanelShortcut(_ event: NSEvent, name: KeyboardShortcuts.Name) -> Bool {
-        guard hasActiveTextInputResponder == false else {
+    func matchesPanelShortcut(_ event: NSEvent, action: PanelShortcutAction) -> Bool {
+        guard shouldProtectPanelTextInput == false else {
             return false
         }
 
-        guard let eventShortcut = KeyboardShortcuts.Shortcut(event: event) else {
+        return PanelShortcutStore.matches(event, action: action)
+    }
+
+    var shouldProtectPanelTextInput: Bool {
+        if panelFocusField == .clipList {
             return false
         }
 
-        return name.shortcut == eventShortcut
+        if let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
+           textView.hasMarkedText() {
+            return true
+        }
+
+        return hasActiveTextInputResponder
     }
 
     func togglePanelLayoutShortcut() {

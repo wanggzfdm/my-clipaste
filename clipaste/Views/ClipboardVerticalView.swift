@@ -4,7 +4,6 @@ struct ClipboardVerticalView: View {
     let items: [ClipboardItem]
     @ObservedObject var viewModel: ClipboardViewModel
     @AppStorage("singleClickPaste") private var singleClickPaste = true
-    @AppStorage("autoPreview") private var autoPreview = false
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: true) {
@@ -20,15 +19,6 @@ struct ClipboardVerticalView: View {
             .padding(.vertical, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onChange(of: viewModel.selectedItemIDs) { _, _ in
-            viewModel.presentAutoPreviewForSelectionIfNeeded(isEnabled: shouldTriggerPreview)
-        }
-        .onChange(of: autoPreview) { _, _ in
-            viewModel.presentAutoPreviewForSelectionIfNeeded(isEnabled: shouldTriggerPreview)
-        }
-        .onChange(of: viewModel.isPreviewModifierHeld) { _, _ in
-            viewModel.presentAutoPreviewForSelectionIfNeeded(isEnabled: shouldTriggerPreview)
-        }
     }
 
     private var pasteHelpText: Text {
@@ -39,9 +29,6 @@ struct ClipboardVerticalView: View {
         }
     }
 
-    private var shouldTriggerPreview: Bool {
-        autoPreview && viewModel.isPreviewModifierHeld
-    }
 }
 
 #Preview {

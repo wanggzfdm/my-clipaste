@@ -66,42 +66,15 @@ extension ClipboardViewModel {
         isHovering: Bool,
         isEnabled: Bool
     ) {
-        guard isEnabled else {
-            dismissAutoPreviewIfNeeded()
-            return
-        }
-
-        if isHovering {
-            cancelAutoPreviewDismissTask()
-            scheduleAutoPreview(for: item)
-        } else {
-            cancelPendingAutoPreview(for: item.id)
-            scheduleAutoPreviewDismiss(for: item.id)
-        }
+        dismissAutoPreviewIfNeeded()
     }
 
     func handleAutoPreviewPopoverHover(for item: ClipboardItem, isHovering: Bool) {
-        guard autoPreviewPresentedItemID == item.id else { return }
-
-        if isHovering {
-            cancelAutoPreviewDismissTask()
-        } else {
-            scheduleAutoPreviewDismiss(for: item.id)
-        }
+        dismissAutoPreviewIfNeeded()
     }
 
     func presentAutoPreviewForSelectionIfNeeded(isEnabled: Bool) {
-        guard isEnabled else {
-            dismissAutoPreviewIfNeeded()
-            return
-        }
-
-        guard let item = quickLookPreviewCandidate else {
-            dismissAutoPreviewIfNeeded()
-            return
-        }
-
-        presentQuickLook(for: item, isAutomaticPreview: true)
+        dismissAutoPreviewIfNeeded()
     }
 
     func dismissAutoPreviewIfNeeded() {
@@ -250,8 +223,8 @@ extension ClipboardViewModel {
             return proposedSize
         }
 
-        let maxWidth = visibleFrame.width * 0.8
-        let maxHeight = visibleFrame.height * 0.8
+        let maxWidth = min(visibleFrame.width * 0.62, 788)
+        let maxHeight = min(visibleFrame.height * 0.62, 688)
         let widthScale = maxWidth / proposedSize.width
         let heightScale = maxHeight / proposedSize.height
         let scale = min(1, widthScale, heightScale)
@@ -299,6 +272,10 @@ extension ClipboardViewModel {
     }
 
     func prewarmQuickLookPreviewIfNeeded() {
+        guard isSearchFilteringActive == false else {
+            return
+        }
+
         guard let item = quickLookPreviewCandidate, item.contentType == .image else {
             return
         }

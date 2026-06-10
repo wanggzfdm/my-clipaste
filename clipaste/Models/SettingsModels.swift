@@ -10,7 +10,6 @@ enum ModifierKey: String, CaseIterable, Identifiable {
 
     static let quickPasteDefaultsKey = "modifier_quick_paste"
     static let plainTextDefaultsKey = "modifier_plain_text"
-    static let previewDefaultsKey = "modifier_preview"
 
     var id: String { rawValue }
 
@@ -58,7 +57,6 @@ enum ModifierKey: String, CaseIterable, Identifiable {
     static func migrateStoredPreferences(in defaults: UserDefaults = .standard) {
         migrate(defaultsKey: quickPasteDefaultsKey, fallback: .command, in: defaults)
         migrate(defaultsKey: plainTextDefaultsKey, fallback: .shift, in: defaults)
-        migrate(defaultsKey: previewDefaultsKey, fallback: .option, in: defaults)
     }
 
     static func quickPastePreference(in defaults: UserDefaults = .standard) -> ModifierKey {
@@ -67,10 +65,6 @@ enum ModifierKey: String, CaseIterable, Identifiable {
 
     static func plainTextPreference(in defaults: UserDefaults = .standard) -> ModifierKey {
         resolvedValue(forKey: plainTextDefaultsKey, fallback: .shift, in: defaults)
-    }
-
-    static func previewPreference(in defaults: UserDefaults = .standard) -> ModifierKey {
-        resolvedValue(forKey: previewDefaultsKey, fallback: .option, in: defaults)
     }
 
     private static func migrate(defaultsKey: String, fallback: ModifierKey, in defaults: UserDefaults) {

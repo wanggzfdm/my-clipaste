@@ -32,11 +32,12 @@ private extension ShortcutsSettingsView {
 private extension ShortcutsSettingsView {
     var panelShortcutsSection: some View {
         Section {
-            ShortcutRecorderRow("Toggle Vertical Clipboard", name: .toggleVerticalClipboard)
-            ShortcutRecorderRow("Next List", name: .nextList)
-            ShortcutRecorderRow("Previous List", name: .prevList)
-            ShortcutRecorderRow("Toggle Favorites for Selection", name: .toggleFavoriteSelection)
-            ShortcutRecorderRow("Clear Clipboard History", name: .clearHistory)
+            PanelShortcutRecorderRow("Toggle Vertical Clipboard", action: .toggleVerticalClipboard)
+            PanelShortcutRecorderRow("Next List", action: .nextList)
+            PanelShortcutRecorderRow("Previous List", action: .prevList)
+            PanelShortcutRecorderRow("Preview Selection", action: .previewSelection)
+            PanelShortcutRecorderRow("Toggle Favorites for Selection", action: .toggleFavoriteSelection)
+            PanelShortcutRecorderRow("Clear Clipboard History", action: .clearHistory)
         } header: {
             SettingsSectionHeader(title: "Panel Shortcuts")
         }
@@ -60,16 +61,11 @@ private extension ShortcutsSettingsView {
                 selection: $viewModel.plainTextModifier
             )
 
-            ModifierPickerView(
-                title: "Preview",
-                suffix: "",
-                selection: $viewModel.previewModifier
-            )
         } header: {
             SettingsSectionHeader(title: "Modifier Keys")
         } footer: {
             SettingsSectionFooter {
-                Text("Hold the quick paste modifier to reveal 1…9 shortcuts. Hold the plain text modifier while copying or pasting to strip formatting. Hold the preview modifier to trigger preview.")
+                Text("Hold the quick paste modifier to reveal 1…9 shortcuts. Hold the plain text modifier while copying or pasting to strip formatting.")
             }
         }
     }
@@ -81,14 +77,8 @@ private extension ShortcutsSettingsView {
     var resetSection: some View {
         Section {
             Button {
-                KeyboardShortcuts.reset(
-                    .toggleClipboardPanel,
-                    .toggleVerticalClipboard,
-                    .nextList,
-                    .prevList,
-                    .toggleFavoriteSelection,
-                    .clearHistory
-                )
+                KeyboardShortcuts.reset(.toggleClipboardPanel)
+                PanelShortcutStore.reset()
             } label: {
                 Label("Reset Shortcuts to Defaults", systemImage: "arrow.counterclockwise")
             }
@@ -131,6 +121,32 @@ private struct ShortcutRecorderRow: View {
 
     private var name: KeyboardShortcuts.Name {
         viewModel.name
+    }
+}
+
+private struct PanelShortcutRecorderRow: View {
+    let title: LocalizedStringKey
+    @StateObject private var viewModel: PanelShortcutRecorderRowViewModel
+
+    init(_ title: LocalizedStringKey, action: PanelShortcutAction) {
+        self.title = title
+        _viewModel = StateObject(wrappedValue: PanelShortcutRecorderRowViewModel(action: action))
+    }
+
+    var body: some View {
+        LabeledContent(title) {
+            HStack(spacing: 8) {
+                LocalizedPanelShortcutRecorder(viewModel: viewModel)
+
+                Button("Restore Default Shortcut", systemImage: "arrow.uturn.backward") {
+                    viewModel.restoreDefault()
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .disabled(!viewModel.canRestoreDefault)
+            }
+        }
     }
 }
 
