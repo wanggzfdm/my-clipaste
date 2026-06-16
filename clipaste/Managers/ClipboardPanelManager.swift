@@ -225,8 +225,21 @@ class ClipboardPanelManager {
         panel.hasShadow = true
         applyPanelMovability(for: layout, panel: panel)
 
-        DispatchQueue.main.async { [weak panel] in
-            panel?.displayIfNeeded()
+        // Restore key window status after the frame change. A nonactivatingPanel can lose
+        // its key state when the frame moves dramatically (e.g. horizontal → vertical),
+        // which tears down keyboard monitors and breaks ESC/Space shortcuts.
+        // Check both synchronously (immediate resign) and asynchronously (deferred resign)
+        // because AppKit may post didResignKeyNotification on the next run-loop tick.
+        if isVisible, !panel.isKeyWindow {
+            panel.makeKeyAndOrderFront(nil)
+        }
+
+        DispatchQueue.main.async { [weak self, weak panel] in
+            guard let self, let panel else { return }
+            panel.displayIfNeeded()
+            if self.isVisible, !panel.isKeyWindow {
+                panel.makeKeyAndOrderFront(nil)
+            }
         }
     }
 

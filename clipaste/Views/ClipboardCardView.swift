@@ -217,10 +217,19 @@ struct ClipboardCardView: View {
     private var cardHeader: some View {
         ZStack(alignment: .topTrailing) {
             HStack(alignment: .center, spacing: 8) {
-                Text(item.typeBadgeTitle())
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(headerTextColor)
-                    .lineLimit(1)
+                if item.hasCustomTitle, let customTitle = item.trimmedCustomTitle {
+                    Text(verbatim: customTitle)
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(headerTextColor)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .minimumScaleFactor(0.72)
+                } else {
+                    Text(item.typeBadgeTitle())
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(headerTextColor)
+                        .lineLimit(1)
+                }
 
                 Spacer(minLength: 0)
 
@@ -266,9 +275,8 @@ struct ClipboardCardView: View {
                 .fill(Color.black.opacity(colorScheme == .dark ? 0.10 : 0.08))
                 .frame(height: 0.5)
         }
-        .overlay(alignment: .leading) {
-            headerCustomTitleOverlay
-        }
+        // Custom title is now shown in cardHeader, no need for overlay
+        
     }
 
     @ViewBuilder
@@ -439,25 +447,6 @@ struct ClipboardCardView: View {
     }
 
     @ViewBuilder
-    private var headerCustomTitleOverlay: some View {
-        if item.hasCustomTitle {
-            VStack {
-                Spacer(minLength: 0)
-
-                ClipboardItemCustomTitleView(
-                    item: item,
-                    viewModel: viewModel,
-                    font: .system(size: 11, weight: .semibold),
-                    textColor: headerTextColor.opacity(0.96)
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.leading, 12)
-            .padding(.trailing, 56)
-            .padding(.bottom, 8)
-        }
-    }
-
     @MainActor
     private func refreshRichPreviewText() async {
         guard viewModel.isSearchFilteringActive == false else {

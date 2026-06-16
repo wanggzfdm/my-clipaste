@@ -7,7 +7,6 @@ struct ClipboardVerticalItemView: View {
         static let appIconSize: CGFloat = 42
         static let contentSpacing: CGFloat = 12
         static let compactAppIconSize: CGFloat = 28
-        static let customTitleWidth: CGFloat = 92
         static let customTitleHeight: CGFloat = 13
         static let customTitleLeading: CGFloat = rowHorizontalPadding + appIconSize + contentSpacing
         static let customTitleTop: CGFloat = 8
@@ -383,12 +382,13 @@ struct ClipboardVerticalItemView: View {
                 textColor: customTitleTextColor
             )
             .frame(
-                width: Layout.customTitleWidth,
-                height: Layout.customTitleHeight,
+                maxWidth: .infinity,
+                minHeight: Layout.customTitleHeight,
+                maxHeight: Layout.customTitleHeight,
                 alignment: .topLeading
             )
-            .clipped()
             .padding(.leading, Layout.customTitleLeading)
+            .padding(.trailing, 60)
             .padding(.top, Layout.customTitleTop)
         }
     }

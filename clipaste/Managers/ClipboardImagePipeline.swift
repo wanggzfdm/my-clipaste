@@ -56,9 +56,7 @@ final class ClipboardImagePipeline {
         loadingTasks[cacheKey] = task
         
         defer {
-            imageLoadingQueue.async { [weak self] in
-                self?.loadingTasks[cacheKey] = nil
-            }
+            loadingTasks[cacheKey] = nil
         }
         
         let image = await task.value

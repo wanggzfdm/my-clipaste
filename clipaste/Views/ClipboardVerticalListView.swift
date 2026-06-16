@@ -130,6 +130,9 @@ struct ClipboardVerticalListView: View {
                 .focused($focusedField, equals: .clipList)
                 .simultaneousGesture(TapGesture().onEnded {
                     focusedField = .clipList
+                    if viewModel.isQuickLookActive {
+                        viewModel.dismissQuickLook()
+                    }
                 })
                 .onDeleteCommand {
                     viewModel.deleteSelection(isCommandHeld: false)

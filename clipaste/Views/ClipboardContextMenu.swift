@@ -246,13 +246,6 @@ extension View {
                 }
             }
 
-            Divider()
-
-            Button {
-                print("trigger new group popover")
-            } label: {
-                Label("New Group…", systemImage: "plus")
-            }
         } label: {
             Label("Add to Group", systemImage: "folder.badge.plus")
         }

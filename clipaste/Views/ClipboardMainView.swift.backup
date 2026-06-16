@@ -160,10 +160,6 @@ struct ClipboardMainView: View {
             .onReceive(NotificationCenter.default.publisher(for: .focusListIntent)) { _ in
                 requestListFocusPreservingSelection()
             }
-            .onChange(of: viewModel.titleEditorItem) { _, newValue in
-                // 当标题编辑 sheet 显示/隐藏时，暂停/恢复全局键盘拦截服务
-                TypeToSearchService.shared.isPaused = (newValue != nil)
-            }
             .sheet(item: titleEditorItemBinding, onDismiss: viewModel.dismissTitleEditor) { item in
                 ClipboardItemTitleEditorSheet(item: item) { title in
                     viewModel.saveCustomTitle(for: item, title: title)
@@ -288,12 +284,6 @@ struct ClipboardMainView: View {
         pendingSearchFocusGeneration &+= 1
         pendingListFocusRequest = nil
         resetPendingBlindTypedSearchInput()
-        
-        // 面板隐藏时关闭预览
-        if viewModel.isQuickLookActive {
-            viewModel.dismissQuickLook()
-        }
-        
         searchService.stop()
         viewModel.stopKeyboardMonitoring()
         viewModel.endPresentation()
@@ -316,14 +306,6 @@ struct ClipboardMainView: View {
             viewModel.ensureListSelection()
         }
 
-        // 横向布局默认不展开搜索框，焦点放在列表上
-        if clipboardLayout == .horizontal {
-            focusedField = .clipList
-            searchService.isTextFieldFocused = false
-            return
-        }
-
-        // 竖向和紧凑布局保持原有行为：自动聚焦搜索框
         if focusedField == .searchBar, isActiveTextInputResponder {
             searchService.isTextFieldFocused = true
             return

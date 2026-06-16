@@ -46,6 +46,9 @@ extension ClipboardViewModel {
     }
 
     func handlePrimaryClickSelection(for itemID: UUID) {
+        if isQuickLookActive {
+            dismissQuickLook()
+        }
         handleSelection(
             id: itemID,
             isCommand: currentModifierFlags.contains(.command),

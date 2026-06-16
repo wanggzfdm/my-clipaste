@@ -33,12 +33,8 @@ struct NativeTextView: NSViewRepresentable {
 
     private func configureTextView(_ textView: NSTextView) {
         if let attrText = attributedText {
-            // 语法高亮模式：根据系统深浅模式动态选择背景色
-            let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            textView.drawsBackground = true
-            textView.backgroundColor = isDark
-                ? NSColor(red: 0.16, green: 0.18, blue: 0.22, alpha: 1.0) // atom-one-dark 背景色
-                : NSColor(red: 0.97, green: 0.97, blue: 0.97, alpha: 1.0) // xcode 浅色背景
+            // 语法高亮模式：不绘制背景，保留窗口的系统毛玻璃
+            textView.drawsBackground = false
             textView.textStorage?.setAttributedString(attrText)
         } else {
             // 纯文本降级模式

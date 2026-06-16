@@ -5,53 +5,29 @@ import os
 struct ClipboardQuickLookView: View {
     let item: ClipboardItem
     @ObservedObject var viewModel: ClipboardViewModel
-    @State private var isHoveringCloseButton = false
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            VStack(alignment: .leading, spacing: 0) {
-                if item.contentType == .image {
-                    ClipboardQuickLookImageView(viewModel: viewModel)
-                } else if item.isFastLink {
-                    ClipboardQuickLookLinkContent(item: item, viewModel: viewModel)
-                } else if let parsedColor = item.fastParsedColor {
-                    // 颜色预览：大色块 + 对比色等宽文字
-                    ZStack {
-                        parsedColor
-                        Text(item.rawText ?? item.textPreview)
-                            .font(.system(size: 28, weight: .bold, design: .monospaced))
-                            .foregroundColor(parsedColor.isDark ? .white : .black)
-                    }
-                    .frame(width: 280, height: 120)
-
-                } else {
-                    ClipboardQuickLookTextContent(item: item, viewModel: viewModel)
+        VStack(alignment: .leading, spacing: 0) {
+            if item.contentType == .image {
+                ClipboardQuickLookImageView(viewModel: viewModel)
+            } else if item.isFastLink {
+                ClipboardQuickLookLinkContent(item: item, viewModel: viewModel)
+            } else if let parsedColor = item.fastParsedColor {
+                // 颜色预览：大色块 + 对比色等宽文字
+                ZStack {
+                    parsedColor
+                    Text(item.rawText ?? item.textPreview)
+                        .font(.system(size: 28, weight: .bold, design: .monospaced))
+                        .foregroundColor(parsedColor.isDark ? .white : .black)
                 }
+                .frame(width: 280, height: 120)
+
+            } else {
+                ClipboardQuickLookTextContent(item: item, viewModel: viewModel)
             }
-            .onHover { hovering in
-                viewModel.handleAutoPreviewPopoverHover(for: item, isHovering: hovering)
-            }
-            
-            // 关闭按钮
-            Button(action: {
-                viewModel.dismissQuickLook()
-            }) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(isHoveringCloseButton ? .primary : .secondary)
-                    .frame(width: 24, height: 24)
-                    .background(
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                            .opacity(isHoveringCloseButton ? 0.85 : 0.6)
-                    )
-            }
-            .buttonStyle(.plain)
-            .padding(12)
-            .onHover { hovering in
-                isHoveringCloseButton = hovering
-            }
-            .help("关闭预览")
+        }
+        .onHover { hovering in
+            viewModel.handleAutoPreviewPopoverHover(for: item, isHovering: hovering)
         }
         // Popover 原生自带材质背景，无需额外设置
     }
@@ -329,7 +305,7 @@ private enum QuickLookAutoTranslator {
                 || CharacterSet.nonBaseCharacters.contains(scalar)
                 || scalar == "'"
                 || scalar == "-"
-                || scalar == "'"
+                || scalar == "’"
         }
     }
 

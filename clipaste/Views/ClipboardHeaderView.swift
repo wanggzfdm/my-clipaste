@@ -188,7 +188,8 @@ struct ClipboardHeaderView: View {
     }
 
     private var isHorizontalSearchExpanded: Bool {
-        viewModel.isSearchCompositionActive ||
+        focusedField == .searchBar ||
+            viewModel.isSearchCompositionActive ||
             !viewModel.searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -244,6 +245,12 @@ struct ClipboardHeaderView: View {
                 .strokeBorder(isHorizontalSearchExpanded ? searchFieldFocusColor : .clear, lineWidth: 1)
         }
         .clipShape(Capsule())
+        .contentShape(Capsule())
+        .onTapGesture {
+            if !isHorizontalSearchExpanded {
+                activateHorizontalSearch()
+            }
+        }
         .shadow(color: searchFieldShadowColor, radius: isHorizontalSearchExpanded ? 8 : 4, y: 2)
         .help(isHorizontalSearchExpanded ? Text("搜索历史") : Text("搜索"))
     }
