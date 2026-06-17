@@ -189,7 +189,7 @@ struct ClipboardHeaderView: View {
 
     private var isHorizontalSearchExpanded: Bool {
         focusedField == .searchBar ||
-            viewModel.isSearchCompositionActive ||
+            (viewModel.isSearchCompositionActive && !viewModel.searchInput.isEmpty) ||
             !viewModel.searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -199,19 +199,11 @@ struct ClipboardHeaderView: View {
             : HorizontalSearchLayout.collapsedWidth
     }
 
-    private var horizontalSearchContentWidth: CGFloat {
-        isHorizontalSearchExpanded
-            ? HorizontalSearchLayout.expandedWidth - HorizontalSearchLayout.fieldHeight
-            : 0
-    }
 
     private var horizontalSearchWidthAnimation: Animation {
         .linear(duration: 0.01)
     }
 
-    private var horizontalSearchContentAnimation: Animation {
-        .linear(duration: 0.01)
-    }
 
     private var horizontalSearchBar: some View {
         HStack(spacing: 0) {
@@ -231,14 +223,13 @@ struct ClipboardHeaderView: View {
             }
             .padding(.leading, isHorizontalSearchExpanded ? 4 : 0)
             .padding(.trailing, isHorizontalSearchExpanded ? HorizontalSearchLayout.horizontalPadding : 0)
-            .frame(width: horizontalSearchContentWidth, alignment: .leading)
+            .frame(width: HorizontalSearchLayout.expandedWidth - HorizontalSearchLayout.fieldHeight, alignment: .leading)
             .opacity(isHorizontalSearchExpanded ? 1 : 0)
-            .offset(x: isHorizontalSearchExpanded ? 0 : -4)
-            .clipped()
             .allowsHitTesting(isHorizontalSearchExpanded)
         }
         .frame(height: HorizontalSearchLayout.fieldHeight)
         .frame(width: horizontalSearchBarWidth, alignment: .leading)
+        .animation(.easeOut(duration: 0.15), value: isHorizontalSearchExpanded)
         .background(Color.clear.background(.regularMaterial))
         .overlay {
             Capsule()
