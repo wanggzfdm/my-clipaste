@@ -176,7 +176,7 @@ private struct PreviewPanelToggle: View {
             get: { previewPanelMode == .enabled },
             set: { previewPanelMode = $0 ? .enabled : .disabled }
         )) {
-            Text("Preview Panel")
+            Text("空格预览")
         }
     }
 }

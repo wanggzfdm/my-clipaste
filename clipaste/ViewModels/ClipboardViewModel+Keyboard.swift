@@ -151,6 +151,10 @@ extension ClipboardViewModel {
     func handlePanelKeyDown(_ event: NSEvent) -> NSEvent? {
         let keyCode = event.keyCode
 
+        if handleQuickLookCopyShortcutIfNeeded(event) {
+            return nil
+        }
+
         if hasActiveTextInputResponder, panelFocusField != .clipList {
             if keyCode == 53 {
                 if isQuickLookActive {
@@ -171,6 +175,8 @@ extension ClipboardViewModel {
                     }
 
                     if !selectedItemIDs.isEmpty || isQuickLookActive {
+                        let mode = PreviewPanelMode(rawValue: UserDefaults.standard.string(forKey: "previewPanelMode") ?? PreviewPanelMode.disabled.rawValue) ?? .disabled
+                        guard mode == .enabled else { return event }
                         toggleQuickLook()
                         return nil
                     }
@@ -231,6 +237,8 @@ extension ClipboardViewModel {
             }
 
             if !selectedItemIDs.isEmpty || isQuickLookActive {
+                let mode = PreviewPanelMode(rawValue: UserDefaults.standard.string(forKey: "previewPanelMode") ?? PreviewPanelMode.disabled.rawValue) ?? .disabled
+                guard mode == .enabled else { return event }
                 toggleQuickLook()
                 return nil
             }
@@ -411,6 +419,58 @@ private extension ClipboardViewModel {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let disallowedModifiers: NSEvent.ModifierFlags = [.command, .control, .option, .shift]
         return modifiers.isDisjoint(with: disallowedModifiers)
+    }
+
+    func handleQuickLookCopyShortcutIfNeeded(_ event: NSEvent) -> Bool {
+        guard isQuickLookCopyShortcut(event),
+              let item = quickLookItem else {
+            return false
+        }
+
+        if let selectedText = selectedQuickLookText(), selectedText.isEmpty == false {
+            PasteEngine.shared.writePlainTextToPasteboard(text: selectedText)
+            playCopySound()
+        } else {
+            copyToClipboard(item: item)
+        }
+
+        return true
+    }
+
+    func isQuickLookCopyShortcut(_ event: NSEvent) -> Bool {
+        guard isQuickLookActive else {
+            return false
+        }
+
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard modifiers.contains(.command),
+              modifiers.isDisjoint(with: [.control, .option]) else {
+            return false
+        }
+
+        return event.keyCode == 8
+    }
+
+    func selectedQuickLookText() -> String? {
+        guard let textView = NSApp.keyWindow?.firstResponder as? NSTextView else {
+            return nil
+        }
+
+        if textView.window === ClipboardPanelManager.shared.panel {
+            return nil
+        }
+
+        let selectedRange = textView.selectedRange()
+        guard selectedRange.length > 0 else {
+            return nil
+        }
+
+        let text = textView.string as NSString
+        guard NSMaxRange(selectedRange) <= text.length else {
+            return nil
+        }
+
+        return text.substring(with: selectedRange)
     }
 
     func navigationDirection(for keyCode: UInt16) -> Int? {
