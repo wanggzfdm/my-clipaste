@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 
 struct ClipboardQuickLookWindowPresenter: NSViewRepresentable {
+    static let windowIdentifier = NSUserInterfaceItemIdentifier("clipaste.quickLookPanel")
+
     @ObservedObject var viewModel: ClipboardViewModel
 
     func makeNSView(context: Context) -> NSView {
@@ -21,6 +23,8 @@ struct ClipboardQuickLookWindowPresenter: NSViewRepresentable {
 
     @MainActor
     final class Coordinator: NSObject, NSWindowDelegate {
+        private static let quickLookWindowIdentifier = ClipboardQuickLookWindowPresenter.windowIdentifier
+
         weak var anchorView: NSView?
         private weak var currentViewModel: ClipboardViewModel?
         private var panel: ClipboardQuickLookFloatingPanel?
@@ -48,7 +52,7 @@ struct ClipboardQuickLookWindowPresenter: NSViewRepresentable {
             DispatchQueue.main.async { [weak self] in
                 self?.layoutPanel()
             }
-            panel?.orderFront(nil)
+            panel?.makeKeyAndOrderFront(nil)
         }
 
         private func makePanel(item: ClipboardItem, viewModel: ClipboardViewModel) {
@@ -60,6 +64,7 @@ struct ClipboardQuickLookWindowPresenter: NSViewRepresentable {
                 defer: false
             )
 
+            panel.identifier = Self.quickLookWindowIdentifier
             panel.contentViewController = hostingController
             panel.backgroundColor = .clear
             panel.isOpaque = false
@@ -74,7 +79,7 @@ struct ClipboardQuickLookWindowPresenter: NSViewRepresentable {
             presentedItem = item
             presentedItemID = item.id
             layoutPanel()
-            panel.orderFront(nil)
+            panel.makeKeyAndOrderFront(nil)
             scheduleDeferredLayouts()
         }
 
@@ -134,8 +139,6 @@ struct ClipboardQuickLookWindowPresenter: NSViewRepresentable {
                targetSize.width > 0,
                targetSize.height > 0 {
                 proposedSize = NSSize(width: targetSize.width + 32, height: targetSize.height + 32)
-            } else if item.isFastLink {
-                proposedSize = NSSize(width: 452, height: 220)
             } else if item.fastParsedColor != nil {
                 proposedSize = NSSize(width: 280, height: 120)
             } else {
@@ -173,11 +176,18 @@ struct ClipboardQuickLookWindowPresenter: NSViewRepresentable {
 
         private func closePanel() {
             guard let panel else { return }
+            let shouldRestorePanelFocus = panel.isKeyWindow
+                && ClipboardPanelManager.shared.panel?.isVisible == true
+
             panel.delegate = nil
             panel.close()
             self.panel = nil
             presentedItem = nil
             presentedItemID = nil
+
+            if shouldRestorePanelFocus {
+                ClipboardPanelManager.shared.panel?.makeKeyAndOrderFront(nil)
+            }
         }
 
         func windowWillClose(_ notification: Notification) {
@@ -194,7 +204,7 @@ struct ClipboardQuickLookWindowPresenter: NSViewRepresentable {
 }
 
 private final class ClipboardQuickLookFloatingPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
 
@@ -219,5 +229,12 @@ private extension NSScreen {
     static var screenContainingMouse: NSScreen? {
         let location = NSEvent.mouseLocation
         return NSScreen.screens.first { $0.frame.contains(location) }
+    }
+}
+
+
+extension NSWindow {
+    var isClipasteQuickLookPanel: Bool {
+        identifier == ClipboardQuickLookWindowPresenter.windowIdentifier
     }
 }

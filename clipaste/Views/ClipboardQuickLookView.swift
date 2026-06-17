@@ -12,8 +12,6 @@ struct ClipboardQuickLookView: View {
             VStack(alignment: .leading, spacing: 0) {
                 if item.contentType == .image {
                     ClipboardQuickLookImageView(viewModel: viewModel)
-                } else if item.isFastLink {
-                    ClipboardQuickLookLinkContent(item: item, viewModel: viewModel)
                 } else if let parsedColor = item.fastParsedColor {
                     // 颜色预览：大色块 + 对比色等宽文字
                     ZStack {
@@ -77,8 +75,8 @@ private struct ClipboardQuickLookLinkContent: View {
             }
         }
         .padding(16)
-        .frame(width: 420, alignment: .topLeading)
-        .frame(minHeight: 160, alignment: .topLeading)
+        .frame(width: 520, alignment: .topLeading)
+        .frame(minHeight: 240, alignment: .topLeading)
     }
 }
 

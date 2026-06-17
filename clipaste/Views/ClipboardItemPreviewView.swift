@@ -35,6 +35,14 @@ struct ClipboardItemPreviewView: View {
         isCompact ? 12 : 16
     }
 
+    private var panelMinHeight: CGFloat {
+        isCompact ? 200 : 280
+    }
+
+    private var panelIdealHeight: CGFloat {
+        isCompact ? 300 : 400
+    }
+
     private var headerHeight: CGFloat {
         isCompact ? 44 : 56
     }
@@ -60,6 +68,8 @@ struct ClipboardItemPreviewView: View {
             minWidth: panelMinWidth,
             idealWidth: panelIdealWidth,
             maxWidth: panelMaxWidth,
+            minHeight: panelMinHeight,
+            idealHeight: panelIdealHeight,
             maxHeight: .infinity,
             alignment: .topLeading
         )
@@ -155,7 +165,7 @@ struct ClipboardItemPreviewView: View {
         case .color:
             colorContentView
         case .link:
-            linkContentView
+            textContentView
         case .code:
             codeContentView
         }
