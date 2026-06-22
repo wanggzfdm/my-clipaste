@@ -7970,6 +7970,7 @@
       }
     },
     "Global Shortcuts" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -11719,6 +11720,9 @@
         }
       }
     },
+    "No text selected" : {
+
+    },
     "None" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -12410,6 +12414,9 @@
         }
       }
     },
+    "Opening translation…" : {
+
+    },
     "Option" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12465,6 +12472,9 @@
           }
         }
       }
+    },
+    "Original Text" : {
+
     },
     "Output Mode" : {
       "localizations" : {
@@ -14299,6 +14309,7 @@
       }
     },
     "Preview Panel" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -14339,7 +14350,44 @@
       }
     },
     "Preview Selection" : {
-
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auswahlvorschau"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aperçu de la sélection"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択項目をプレビュー"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "선택 항목 미리 보기"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预览所选项"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "預覽所選項"
+          }
+        }
+      }
     },
     "Preview Translation" : {
 
@@ -14383,6 +14431,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "…（文字過大，為保護記憶體已摺疊預覽，貼上不影響）"
+          }
+        }
+      }
+    },
+    "Preview URL Prefix" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorschau:"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aperçu :"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレビュー:"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "미리 보기:"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预览："
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "預覽："
           }
         }
       }
@@ -17018,6 +17106,9 @@
         }
       }
     },
+    "Selected Text" : {
+
+    },
     "Send" : {
       "localizations" : {
         "de" : {
@@ -17473,6 +17564,7 @@
       }
     },
     "Show / Hide Clipboard Panel" : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -19843,7 +19935,62 @@
         }
       }
     },
+    "Translate Preview" : {
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vorschau übersetzen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Traduire l’aperçu"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プレビューを翻訳"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "미리 보기 번역"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻译预览"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "翻譯預覽"
+          }
+        }
+      }
+    },
+    "Translate To" : {
+
+    },
     "Translating preview…" : {
+
+    },
+    "Translating…" : {
+
+    },
+    "Translation" : {
+
+    },
+    "Translation opened." : {
+
+    },
+    "Translation will appear here." : {
 
     },
     "Try a different search term" : {
@@ -21207,6 +21354,9 @@
     "保存" : {
 
     },
+    "全局快捷键" : {
+
+    },
     "关闭预览" : {
 
     },
@@ -21272,6 +21422,9 @@
 
     },
     "取消固定面板" : {
+
+    },
+    "启用全局选中文本翻译" : {
 
     },
     "呈现方式" : {
@@ -21470,6 +21623,9 @@
         }
       }
     },
+    "开启后，可在其他 App 中选中文本并使用快捷键翻译。此功能需要辅助功能权限，并会在必要时临时复制选中文本后恢复剪贴板。" : {
+
+    },
     "所有分组" : {
 
     },
@@ -21528,10 +21684,16 @@
         }
       }
     },
+    "显示 / 隐藏剪贴板面板" : {
+
+    },
     "正在翻译…" : {
 
     },
     "浮入" : {
+
+    },
+    "空格预览" : {
 
     },
     "编辑器类型" : {
@@ -21581,6 +21743,12 @@
       }
     },
     "翻译" : {
+
+    },
+    "翻译选中内容" : {
+
+    },
+    "翻译选中文本" : {
 
     },
     "请选择 %@ 导出的 JSON 文件。Clipaste 会按 PasteNow 专用 JSON 路由解析。" : {

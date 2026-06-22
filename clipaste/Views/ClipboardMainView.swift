@@ -304,7 +304,17 @@ struct ClipboardMainView: View {
     }
 
     private func handlePanelDidResignKey() {
-        deactivatePanelInputHandling()
+        // Opening the QuickLook preview intentionally moves key focus from the
+        // clipboard panel to the preview panel so text can be selected/copied.
+        // NSWindow.didResignKeyNotification fires before AppKit has always
+        // settled NSApp.keyWindow, so defer the decision one run-loop turn.
+        DispatchQueue.main.async {
+            if NSApp.keyWindow?.isClipasteQuickLookPanel == true {
+                return
+            }
+
+            deactivatePanelInputHandling()
+        }
     }
 
     private func requestDefaultSearchFocus() {

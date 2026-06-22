@@ -7,14 +7,20 @@ struct SimpleTextEditorSheet: View {
     @Environment(\.locale) private var locale
     
     let item: ClipboardItem
+    let onCancel: () -> Void
     let onSave: (String, Data?) -> Void
     
     @State private var draftText: String
     @State private var draftRTFData: Data?
     @FocusState private var isTextViewFocused: Bool
     
-    init(item: ClipboardItem, onSave: @escaping (String, Data?) -> Void) {
+    init(
+        item: ClipboardItem,
+        onCancel: @escaping () -> Void = {},
+        onSave: @escaping (String, Data?) -> Void
+    ) {
         self.item = item
+        self.onCancel = onCancel
         self.onSave = onSave
         _draftText = State(initialValue: item.textPreview)
     }
@@ -24,7 +30,7 @@ struct SimpleTextEditorSheet: View {
             // 顶部工具栏 - 简洁风格
             HStack(spacing: 0) {
                 // 左侧：取消按钮
-                Button(action: { dismiss() }) {
+                Button(action: cancelAndDismiss) {
                     Text("取消")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(.primary)
@@ -137,7 +143,10 @@ struct SimpleTextEditorSheet: View {
         }
         .frame(minWidth: 500, minHeight: 400)
         .onAppear {
-            isTextViewFocused = true
+            // 避免在 SwiftUI 正在更新视图树时同步修改 FocusState。
+            DispatchQueue.main.async {
+                isTextViewFocused = true
+            }
         }
     }
     
@@ -157,8 +166,14 @@ struct SimpleTextEditorSheet: View {
         // 由 SimpleTextViewEditor 内部处理
     }
     
+    private func cancelAndDismiss() {
+        onCancel()
+        dismiss()
+    }
+    
     private func saveAndDismiss() {
         onSave(draftText, draftRTFData)
+        onCancel()
         dismiss()
     }
 }
@@ -236,17 +251,20 @@ struct SimpleTextViewEditor: NSViewRepresentable {
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         guard let textView = nsView.documentView as? NSTextView else { return }
         
-        // 仅在文本未聚焦时同步外部变化
-        if !isFocused {
+        // 仅在文本未聚焦时同步外部变化，且避免无意义地重设 NSTextView 内容。
+        if !isFocused, textView.string != text {
             textView.string = text
         }
         
-        // 更新 RTF 数据
+        // updateNSView 是 SwiftUI 的视图更新阶段，不能在这里同步写 Binding，
+        // 否则会触发 “Modifying state during view update” 并可能导致窗口显示异常。
         if let rtf = try? textView.attributedString().data(
             from: NSRange(location: 0, length: textView.attributedString().length),
             documentAttributes: [.documentType: NSAttributedString.DocumentType.rtf]
-        ) {
-            rtfData = rtf
+        ), rtfData != rtf {
+            DispatchQueue.main.async {
+                self.rtfData = rtf
+            }
         }
     }
     

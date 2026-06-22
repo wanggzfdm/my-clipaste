@@ -126,6 +126,51 @@ struct AIConfiguration: Identifiable, Codable, Equatable, Hashable {
             return false
         }
     }
+
+    var requestEndpoint: String {
+        let rawEndpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedEndpoint = rawEndpoint.isEmpty ? providerType.defaultEndpoint : rawEndpoint
+
+        guard providerType == .custom else {
+            return resolvedEndpoint
+        }
+
+        return Self.openAICompatibleChatCompletionsEndpoint(from: resolvedEndpoint)
+    }
+
+    private static func openAICompatibleChatCompletionsEndpoint(from endpoint: String) -> String {
+        var value = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.isEmpty == false else { return value }
+
+        let lowercasedValue = value.lowercased()
+        if lowercasedValue.hasPrefix("http://") == false,
+           lowercasedValue.hasPrefix("https://") == false {
+            value = "http://\(value)"
+        }
+
+        guard var components = URLComponents(string: value) else {
+            return value
+        }
+
+        var path = components.percentEncodedPath
+        while path.hasSuffix("/") {
+            path.removeLast()
+        }
+
+        let lowercasedPath = path.lowercased()
+        if path.isEmpty {
+            path = "/v1/chat/completions"
+        } else if lowercasedPath.hasSuffix("/chat/completions") {
+            // The user already entered the full OpenAI-compatible chat completions endpoint.
+        } else if lowercasedPath.hasSuffix("/v1") {
+            path += "/chat/completions"
+        } else {
+            path += "/v1/chat/completions"
+        }
+
+        components.percentEncodedPath = path
+        return components.string ?? value
+    }
 }
 
 private extension String {

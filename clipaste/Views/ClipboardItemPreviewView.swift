@@ -81,9 +81,6 @@ struct ClipboardItemPreviewView: View {
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         )
         .shadow(color: Color.black.opacity(0.12), radius: 12, y: 4)
-        .task(id: item.id) {
-            await refreshPreviewTranslation()
-        }
     }
     
     // MARK: - Header View

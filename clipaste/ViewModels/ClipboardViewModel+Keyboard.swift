@@ -151,6 +151,10 @@ extension ClipboardViewModel {
     func handlePanelKeyDown(_ event: NSEvent) -> NSEvent? {
         let keyCode = event.keyCode
 
+        if handleQuickLookTranslateSelectionShortcutIfNeeded(event) {
+            return nil
+        }
+
         if handleQuickLookCopyShortcutIfNeeded(event) {
             return nil
         }
@@ -168,6 +172,21 @@ extension ClipboardViewModel {
             }
 
             if panelFocusField == .searchBar, isSearchInputEffectivelyEmpty {
+                if PanelShortcutStore.matches(event, action: .translatePreviewSelection) {
+                    if let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
+                       textView.hasMarkedText() {
+                        return event
+                    }
+
+                    if !selectedItemIDs.isEmpty || isQuickLookActive {
+                        let mode = PreviewPanelMode(rawValue: UserDefaults.standard.string(forKey: "previewPanelMode") ?? PreviewPanelMode.disabled.rawValue) ?? .disabled
+                        guard mode == .enabled else { return event }
+                        openTranslationWindowForCurrentPreviewSelection()
+                        return nil
+                    }
+                    return event
+                }
+
                 if PanelShortcutStore.matches(event, action: .previewSelection) {
                     if let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
                        textView.hasMarkedText() {
@@ -229,6 +248,20 @@ extension ClipboardViewModel {
                 NotificationCenter.default.post(name: NSNotification.Name("HidePanelForce"), object: nil)
             }
             return nil
+        }
+
+        if matchesPanelShortcut(event, action: .translatePreviewSelection) {
+            if shouldProtectPanelTextInput {
+                return event
+            }
+
+            if !selectedItemIDs.isEmpty || isQuickLookActive {
+                let mode = PreviewPanelMode(rawValue: UserDefaults.standard.string(forKey: "previewPanelMode") ?? PreviewPanelMode.disabled.rawValue) ?? .disabled
+                guard mode == .enabled else { return event }
+                openTranslationWindowForCurrentPreviewSelection()
+                return nil
+            }
+            return event
         }
 
         if matchesPanelShortcut(event, action: .previewSelection) {
@@ -343,7 +376,7 @@ extension ClipboardViewModel {
     }
 }
 
-private extension ClipboardViewModel {
+extension ClipboardViewModel {
     var isSearchInputEffectivelyEmpty: Bool {
         searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -437,6 +470,70 @@ private extension ClipboardViewModel {
         return true
     }
 
+    func openTranslationWindowForCurrentPreviewSelection() {
+        guard let item = quickLookPreviewCandidate ?? quickLookItem else {
+            return
+        }
+
+        guard let configuration = aiSettingsViewModel.activeConfiguration else {
+            operationNotice = String(localized: "No active AI configuration is available.")
+            NotificationCenter.default.post(name: .openSettingsIntent, object: nil)
+            return
+        }
+
+        let selectedTranslationText = selectedQuickLookText()?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let sourceTextOverride = selectedTranslationText?.isEmpty == false ? selectedTranslationText : nil
+
+        if isQuickLookActive {
+            dismissQuickLook()
+        }
+
+        openTranslationWindow(
+            for: item,
+            configuration: configuration,
+            sourceTextOverride: sourceTextOverride
+        )
+    }
+
+    func handleQuickLookTranslateSelectionShortcutIfNeeded(_ event: NSEvent) -> Bool {
+        guard isQuickLookTranslateSelectionShortcut(event),
+              let selectedText = selectedQuickLookText()?.trimmingCharacters(in: .whitespacesAndNewlines),
+              selectedText.isEmpty == false else {
+            return false
+        }
+
+        guard let item = quickLookItem else { return false }
+        guard let configuration = aiSettingsViewModel.activeConfiguration else {
+            operationNotice = String(localized: "No active AI configuration is available.")
+            NotificationCenter.default.post(name: .openSettingsIntent, object: nil)
+            return true
+        }
+
+        dismissQuickLook()
+        openTranslationWindow(
+            for: item,
+            configuration: configuration,
+            sourceTextOverride: selectedText
+        )
+        return true
+    }
+
+    func isQuickLookTranslateSelectionShortcut(_ event: NSEvent) -> Bool {
+        guard isQuickLookActive else {
+            return false
+        }
+
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard modifiers.contains(.control),
+              modifiers.contains(.shift),
+              modifiers.isDisjoint(with: [.command, .option]) else {
+            return false
+        }
+
+        return event.keyCode == 49
+    }
+
     func isQuickLookCopyShortcut(_ event: NSEvent) -> Bool {
         guard isQuickLookActive else {
             return false
@@ -444,7 +541,7 @@ private extension ClipboardViewModel {
 
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard modifiers.contains(.command),
-              modifiers.isDisjoint(with: [.control, .option]) else {
+              modifiers.isDisjoint(with: [.control, .option, .shift]) else {
             return false
         }
 

@@ -99,7 +99,11 @@ private struct ClipboardQuickLookTextContent: View {
     }
 
     var body: some View {
-        NativeTextView(text: safeText, attributedText: highlightedAttr)
+        NativeTextView(
+            text: safeText,
+            attributedText: highlightedAttr,
+            onTranslateSelection: translateSelectedText
+        )
             .frame(
                 minWidth: 400,
                 idealWidth: 500,
@@ -115,9 +119,18 @@ private struct ClipboardQuickLookTextContent: View {
             .task(id: item.contentHash) {
                 highlightedAttr = await ClipboardQuickLookTextLoader.loadHighlightedText(for: item)
             }
-            .task(id: item.id) {
+            .task(id: translationTaskID) {
                 await refreshTranslation()
             }
+    }
+
+    private var translationTaskID: String {
+        "\(item.id)-\(viewModel.forceQuickLookTranslate)-\(viewModel.quickLookTranslationOverrideText?.hashValue ?? 0)"
+    }
+
+    private func translateSelectedText(_ text: String) {
+        viewModel.quickLookTranslationOverrideText = text
+        viewModel.forceQuickLookTranslate = true
     }
 
     @ViewBuilder
@@ -145,7 +158,7 @@ private struct ClipboardQuickLookTextContent: View {
         case .translated(let text):
             translationCard(isInteractive: true) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("翻译", systemImage: "character.bubble")
+                    Label(viewModel.quickLookTranslationOverrideText == nil ? "翻译" : "翻译选中内容", systemImage: "character.bubble")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
 
@@ -209,7 +222,14 @@ private struct ClipboardQuickLookTextContent: View {
 
         os_log("[QuickLookTranslation] Starting for item: %{public}@, contentType: %{public}@, hasRTF: %{public}d", type: .info, item.id.uuidString, item.contentType.rawValue, item.hasRTF)
 
-        guard let request = QuickLookTranslationRequest(item: item, text: safeText) else {
+        let forceTranslate = viewModel.forceQuickLookTranslate
+        guard forceTranslate else {
+            os_log("[QuickLookTranslation] Skipped: translation was not explicitly requested", type: .info)
+            return
+        }
+
+        let sourceText = viewModel.quickLookTranslationOverrideText ?? safeText
+        guard let request = QuickLookTranslationRequest(item: item, text: sourceText, forceTranslate: forceTranslate) else {
             os_log("[QuickLookTranslation] Skipped: request unavailable", type: .info)
             translationState = .skipped(String(localized: "Preview translation is available for text content."))
             return
@@ -252,7 +272,7 @@ private enum QuickLookTranslationState: Equatable {
 private struct QuickLookTranslationRequest {
     let text: String
 
-    init?(item: ClipboardItem, text sourceText: String) {
+    init?(item: ClipboardItem, text sourceText: String, forceTranslate: Bool = false) {
         guard item.contentType == .text || item.contentType == .code || item.contentType == .link else {
             return nil
         }
@@ -262,7 +282,7 @@ private struct QuickLookTranslationRequest {
             return nil
         }
 
-        guard QuickLookAutoTranslator.shouldTranslate(text) else {
+        if !forceTranslate && !QuickLookAutoTranslator.shouldTranslate(text) {
             return nil
         }
 

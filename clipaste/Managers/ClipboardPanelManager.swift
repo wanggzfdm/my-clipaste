@@ -61,6 +61,33 @@ class ClipboardPanelManager {
         panelViewModel.preparePanelDataIfNeeded()
     }
 
+    func presentGlobalSelectionTranslation(text: String, sourceApp: NSRunningApplication?) {
+        let sourceAppName = sourceApp?.localizedName ?? String(localized: "Selected Text")
+        guard let configuration = AISettingsViewModel.shared.activeConfiguration else {
+            showGlobalSelectionTranslationUnavailableNotice()
+            NotificationCenter.default.post(name: .openSettingsIntent, object: nil)
+            return
+        }
+
+        AIConversationWindowManager.shared.openTranslation(
+            title: sourceAppName,
+            configuration: configuration,
+            sourceText: text
+        )
+    }
+
+    @discardableResult
+    func translateCurrentPanelSelectionIfPossible() -> Bool {
+        guard isVisible else { return false }
+        panelViewModel.openTranslationWindowForCurrentPreviewSelection()
+        return true
+    }
+
+    func showGlobalSelectionTranslationUnavailableNotice() {
+        guard isVisible else { return }
+        panelViewModel.operationNotice = String(localized: "No text selected")
+    }
+
     private func setupPanel() {
         let styleMask: NSWindow.StyleMask = [.borderless]
 
@@ -513,6 +540,13 @@ class ClipboardPanelManager {
         panel.resignKey()
         isVisible = false
 
+        // If QuickLook currently owns key focus, the main panel will not emit a fresh
+        // resign-key notification during hide. Close it explicitly so outside clicks
+        // never leave a detached preview window or active keyboard monitor state.
+        if panelViewModel.isQuickLookActive {
+            panelViewModel.dismissQuickLook()
+        }
+
         // 将焦点精准归还给呼出面板前的 App（保证 Cmd+V 粘贴命中目标窗口）
         if restorePreviousActiveApp, let app = previousActiveApp, !app.isTerminated {
             app.activate()
@@ -539,7 +573,7 @@ class ClipboardPanelManager {
 
     private func setupEventMonitor() {
         guard eventMonitor == nil else { return }
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self, self.isVisible else { return }
                 // 始终走 hidePanel()，内部会检查图钉状态

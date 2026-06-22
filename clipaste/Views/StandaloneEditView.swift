@@ -139,6 +139,7 @@ struct StandaloneEditView: View {
         guard item.hasRTF else { return }
         initialRTFData = await StorageManager.shared.loadRTFData(id: item.id)
     }
+
 }
 
 private extension Text {

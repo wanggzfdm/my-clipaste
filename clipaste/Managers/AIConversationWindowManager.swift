@@ -19,6 +19,7 @@ final class AIConversationWindowManager: NSObject, NSWindowDelegate {
         configuration: AIConfiguration,
         messages: [AIChatMessage]
     ) {
+        let windowTitle = title.isEmpty ? String(localized: "AI Conversation") : title
         let windowID = UUID().uuidString
         let conversationView = AIConversationView(
             windowID: windowID,
@@ -28,14 +29,69 @@ final class AIConversationWindowManager: NSObject, NSWindowDelegate {
         )
         let hostingController = NSHostingController(rootView: conversationView)
 
+        presentWindow(
+            id: windowID,
+            title: windowTitle,
+            size: NSSize(width: 720, height: 640),
+            hostingController: hostingController
+        )
+    }
+
+    func openTranslation(
+        title: String,
+        configuration: AIConfiguration,
+        sourceText: String
+    ) {
+        let windowTitle = title.isEmpty ? String(localized: "Translation") : title
+        let windowID = UUID().uuidString
+        let translationView = AITranslationWindowView(
+            windowID: windowID,
+            title: windowTitle,
+            sourceText: sourceText,
+            configuration: configuration
+        )
+        let hostingController = NSHostingController(rootView: translationView)
+
+        presentWindow(
+            id: windowID,
+            title: windowTitle,
+            size: NSSize(width: 900, height: 620),
+            hostingController: hostingController,
+            usesTransparentGlass: true
+        )
+    }
+
+    private func presentWindow<Content: View>(
+        id windowID: String,
+        title: String,
+        size: NSSize,
+        hostingController: NSHostingController<Content>,
+        usesTransparentGlass: Bool = false
+    ) {
+        let styleMask: NSWindow.StyleMask = usesTransparentGlass
+            ? [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            : [.titled, .closable, .miniaturizable, .resizable]
         let window = AIConversationWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 640),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: styleMask,
             backing: .buffered,
             defer: false
         )
 
-        window.title = title.isEmpty ? String(localized: "AI Conversation") : title
+        window.title = title
+        if usesTransparentGlass {
+            window.backgroundColor = .clear
+            window.isOpaque = false
+            window.hasShadow = true
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.isMovableByWindowBackground = true
+            hostingController.view.wantsLayer = true
+            hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
+            window.standardWindowButton(.closeButton)?.isHidden = true
+            window.standardWindowButton(.miniaturizeButton)?.isHidden = true
+            window.standardWindowButton(.zoomButton)?.isHidden = true
+        }
         window.center()
         window.contentViewController = hostingController
         window.isReleasedWhenClosed = false

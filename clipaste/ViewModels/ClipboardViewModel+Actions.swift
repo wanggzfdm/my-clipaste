@@ -232,17 +232,32 @@ extension ClipboardViewModel {
 
     @MainActor
     func editItemContentSimple(item: ClipboardItem) {
+        if let existingWindow = EditWindowManager.shared.existingLightweightWindow(for: item) {
+            existingWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        
+        // 在显示窗口前捕获面板 frame；显示编辑窗口后横向面板可能会自动隐藏。
+        let pendingPanelFrame = EditWindowManager.captureHorizontalPanelFrame()
+        let windowSize = NSSize(width: 580, height: 480)
+        let targetFrame = EditWindowManager.targetFrame(windowSize: windowSize, overPanelFrame: pendingPanelFrame)
+        
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 580, height: 480),
+            contentRect: targetFrame,
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         window.title = "编辑内容"
-        window.center()
         window.isReleasedWhenClosed = false
-        
-        let editView = SimpleTextEditorSheet(item: item) { [weak self] newText, newRTFData in
+
+        let editView = SimpleTextEditorSheet(
+            item: item,
+            onCancel: { [weak window] in
+                window?.close()
+            }
+        ) { [weak self] newText, newRTFData in
             guard let self = self else { return }
             
             // 保存逻辑
@@ -260,7 +275,10 @@ extension ClipboardViewModel {
         }
         
         window.contentViewController = NSHostingController(rootView: editView)
+        window.setFrame(targetFrame, display: false)
+        EditWindowManager.shared.retainLightweightWindow(window, for: item)
         window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func recognizeTextFromImage(item: ClipboardItem) {
@@ -459,6 +477,11 @@ extension ClipboardViewModel {
             return
         }
 
+        if skill.presetIdentifier == DefaultAISkillPreset.translateToEnglish.rawValue {
+            openTranslationWindow(for: item, configuration: configuration)
+            return
+        }
+
         showOperationNotice(String(localized: "Running AI skill…"))
 
         Task { @MainActor in
@@ -504,16 +527,51 @@ extension ClipboardViewModel {
     }
 
     func translateItem(item: ClipboardItem) {
-        // 使用 translateToEnglish 预设技能
-        let translateSkill = AISkill(
-            id: UUID(),
-            name: String(localized: "Preset Skill Translate to English"),
-            promptTemplate: String(localized: "Preset Prompt Translate to English"),
-            supportedContentTypes: DefaultAISkillPreset.translateToEnglish.supportedContentTypes,
-            configurationID: nil,
-            outputMode: DefaultAISkillPreset.translateToEnglish.outputMode
-        )
-        runAISkill(translateSkill, for: item)
+        selectedItemIDs = [item.id]
+        lastSelectedID = item.id
+
+        guard let configuration = aiSettingsViewModel.activeConfiguration else {
+            showOperationNotice(String(localized: "No active AI configuration is available."))
+            NotificationCenter.default.post(name: .openSettingsIntent, object: nil)
+            return
+        }
+
+        openTranslationWindow(for: item, configuration: configuration)
+    }
+
+    func openTranslationWindow(
+        for item: ClipboardItem,
+        configuration: AIConfiguration,
+        sourceTextOverride: String? = nil
+    ) {
+        showOperationNotice(String(localized: "Opening translation…"))
+
+        Task { @MainActor in
+            do {
+                let sourceText: String
+                if let sourceTextOverride {
+                    sourceText = sourceTextOverride
+                } else {
+                    sourceText = try await AIExecutionService.shared.prompt(
+                        for: AISkill(
+                            name: String(localized: "Translation"),
+                            promptTemplate: "{{clipboard.text}}",
+                            supportedContentTypes: DefaultAISkillPreset.translateToEnglish.supportedContentTypes
+                        ),
+                        item: item
+                    )
+                }
+
+                AIConversationWindowManager.shared.openTranslation(
+                    title: String(localized: "Translation"),
+                    configuration: configuration,
+                    sourceText: sourceText
+                )
+                showOperationNotice(String(localized: "Translation opened."))
+            } catch {
+                showOperationNotice(error.localizedDescription)
+            }
+        }
     }
 
     func copyQuickLookTranslation(_ text: String) {

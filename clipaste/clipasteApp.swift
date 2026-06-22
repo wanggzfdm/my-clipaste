@@ -13,7 +13,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let onboardingDefaultsKey = "hasCompletedOnboarding"
     private let hideMenuBarIconDefaultsKey = "hideMenuBarIcon"
     private let globalShortcutNames: [KeyboardShortcuts.Name] = [
-        .toggleClipboardPanel
+        .toggleClipboardPanel,
+        .translateSelectedText
     ]
     nonisolated(unsafe) private var onboardingStateObserver: NSObjectProtocol?
     private var lastKnownOnboardingState = false
@@ -30,7 +31,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.register(defaults: [
             "singleClickPaste": true,
-            "autoPasteToActiveApp": true
+            "autoPasteToActiveApp": true,
+            GlobalSelectionTranslationService.isEnabledDefaultsKey: false
         ])
 
         if let appIcon = NSImage(named: "AppIcon") {
@@ -111,6 +113,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // that summons the panel from any frontmost app.
         KeyboardShortcuts.onKeyDown(for: .toggleClipboardPanel) { [weak self] in
             self?.handleTogglePanelShortcut()
+        }
+
+        KeyboardShortcuts.onKeyUp(for: .translateSelectedText) {
+            GlobalSelectionTranslationService.shared.translateFrontmostSelection()
         }
 
         // NOTE: All other panel-related shortcuts (toggle layout, next/previous list, toggle

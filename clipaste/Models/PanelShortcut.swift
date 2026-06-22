@@ -7,6 +7,7 @@ enum PanelShortcutAction: String, CaseIterable, Identifiable {
     case nextList
     case prevList
     case previewSelection
+    case translatePreviewSelection
     case toggleFavoriteSelection
     case clearHistory
 
@@ -22,6 +23,8 @@ enum PanelShortcutAction: String, CaseIterable, Identifiable {
             .init(.leftArrow, modifiers: [.command])
         case .previewSelection:
             .init(.space)
+        case .translatePreviewSelection:
+            .init(.space, modifiers: [.shift])
         case .toggleFavoriteSelection:
             .init(.e, modifiers: [.control])
         case .clearHistory:

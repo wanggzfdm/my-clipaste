@@ -6,11 +6,15 @@ extension ClipboardViewModel {
         if isQuickLookActive {
             dismissQuickLook()
         } else if let item = quickLookPreviewCandidate {
+            forceQuickLookTranslate = false
+            quickLookTranslationOverrideText = nil
             presentQuickLook(for: item)
         }
     }
 
     func dismissQuickLook() {
+        forceQuickLookTranslate = false
+        quickLookTranslationOverrideText = nil
         clearAutoPreviewState()
         quickLookLoadGeneration &+= 1
         quickLookLoadTask?.cancel()
@@ -33,6 +37,10 @@ extension ClipboardViewModel {
             autoPreviewPresentedItemID = item.id
         } else {
             clearAutoPreviewState()
+        }
+
+        if forceQuickLookTranslate == false {
+            quickLookTranslationOverrideText = nil
         }
 
         quickLookLoadGeneration &+= 1

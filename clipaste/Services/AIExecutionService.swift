@@ -121,7 +121,7 @@ final class AIExecutionService {
     }
 
     private func sendOpenAICompatible(messages: [AIChatMessage], configuration: AIConfiguration) async throws -> String {
-        let endpoint = configuration.endpoint.isEmpty ? configuration.providerType.defaultEndpoint : configuration.endpoint
+        let endpoint = configuration.requestEndpoint
         guard let url = URL(string: endpoint) else {
             throw AIExecutionError.invalidEndpoint
         }
@@ -156,7 +156,7 @@ final class AIExecutionService {
     }
 
     private func sendClaude(messages: [AIChatMessage], configuration: AIConfiguration) async throws -> String {
-        let endpoint = configuration.endpoint.isEmpty ? configuration.providerType.defaultEndpoint : configuration.endpoint
+        let endpoint = configuration.requestEndpoint
         guard let url = URL(string: endpoint) else {
             throw AIExecutionError.invalidEndpoint
         }

@@ -4,6 +4,7 @@ import AppKit
 struct NativeTextView: NSViewRepresentable {
     var text: String
     var attributedText: NSAttributedString?
+    var onTranslateSelection: ((String) -> Void)?
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
@@ -12,22 +13,29 @@ struct NativeTextView: NSViewRepresentable {
         scrollView.drawsBackground = false
 
         guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
+        let quickLookTextView = QuickLookSelectableTextView(frame: textView.frame)
+        quickLookTextView.textContainer = textView.textContainer
+        quickLookTextView.textStorage?.setAttributedString(textView.attributedString())
+        quickLookTextView.delegate = textView.delegate
+        scrollView.documentView = quickLookTextView
 
         // 核心配置：只读、可选中
-        textView.isEditable = false
-        textView.isSelectable = true
+        quickLookTextView.isEditable = false
+        quickLookTextView.isSelectable = true
+        quickLookTextView.onTranslateSelection = onTranslateSelection
 
         // 极其关键：开启非连续布局，允许巨量文本在后台分块渲染
-        textView.layoutManager?.allowsNonContiguousLayout = true
+        quickLookTextView.layoutManager?.allowsNonContiguousLayout = true
 
-        textView.textContainerInset = NSSize(width: 20, height: 20)
+        quickLookTextView.textContainerInset = NSSize(width: 20, height: 20)
 
-        configureTextView(textView)
+        configureTextView(quickLookTextView)
         return scrollView
     }
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
         guard let textView = nsView.documentView as? NSTextView else { return }
+        (textView as? QuickLookSelectableTextView)?.onTranslateSelection = onTranslateSelection
         configureTextView(textView)
     }
 
@@ -43,5 +51,41 @@ struct NativeTextView: NSViewRepresentable {
             textView.textColor = NSColor.labelColor
             textView.string = text
         }
+    }
+}
+
+private final class QuickLookSelectableTextView: NSTextView {
+    var onTranslateSelection: ((String) -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let isTranslateSelectionShortcut = event.keyCode == 49
+            && modifiers.contains(.shift)
+            && modifiers.isDisjoint(with: [.command, .control, .option])
+
+        if isTranslateSelectionShortcut,
+           let selectedText = selectedTextForTranslation() {
+            onTranslateSelection?(selectedText)
+            return
+        }
+
+        super.keyDown(with: event)
+    }
+
+    private func selectedTextForTranslation() -> String? {
+        let selectedRange = selectedRange()
+        guard selectedRange.length > 0 else {
+            return nil
+        }
+
+        let source = string as NSString
+        guard NSMaxRange(selectedRange) <= source.length else {
+            return nil
+        }
+
+        let selectedText = source
+            .substring(with: selectedRange)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return selectedText.isEmpty ? nil : selectedText
     }
 }

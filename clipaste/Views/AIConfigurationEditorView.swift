@@ -61,8 +61,22 @@ struct AIConfigurationEditorView: View {
 
                     if viewModel.editingConfiguration.providerType == .custom {
                         LabeledContent {
-                            TextField("", text: $viewModel.editingConfiguration.endpoint)
-                                .configurationTextFieldStyle()
+                            VStack(alignment: .leading, spacing: 6) {
+                                TextField("", text: $viewModel.editingConfiguration.endpoint)
+                                    .configurationTextFieldStyle()
+
+                                HStack(spacing: 4) {
+                                    Text(LocalizedStringKey("Preview URL Prefix"))
+                                    Text(verbatim: customEndpointPreviewURL)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                        .textSelection(.enabled)
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 240, alignment: .leading)
+                                .help(customEndpointPreviewURL)
+                            }
                         } label: {
                             Text(LocalizedStringKey("API Endpoint"))
                         }
@@ -163,6 +177,12 @@ struct AIConfigurationEditorView: View {
             .padding(.vertical, 16)
         }
         .frame(minWidth: 480, idealWidth: 520, minHeight: 440)
+    }
+}
+
+private extension AIConfigurationEditorView {
+    var customEndpointPreviewURL: String {
+        viewModel.editingConfiguration.requestEndpoint
     }
 }
 

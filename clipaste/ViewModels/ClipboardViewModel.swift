@@ -54,6 +54,8 @@ final class ClipboardViewModel: ObservableObject {
     @Published var isLoadingMoreHistory = false
     var lastSelectedID: UUID? = nil
     @Published var quickLookItem: ClipboardItem? = nil
+    @Published var forceQuickLookTranslate: Bool = false
+    @Published var quickLookTranslationOverrideText: String? = nil
     @Published var operationNotice: String? = nil
     @Published var highResImage: NSImage? = nil
     @Published var previewTargetSize: CGSize = .zero

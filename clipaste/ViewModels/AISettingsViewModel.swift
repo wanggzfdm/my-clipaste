@@ -324,7 +324,7 @@ final class AISettingsViewModel {
             return
         }
 
-        var urlString = config.endpoint.isEmpty ? config.providerType.defaultEndpoint : config.endpoint
+        var urlString = config.requestEndpoint
         let model = config.model.isEmpty ? (config.providerType.defaultModels.first ?? "") : config.model
 
         if config.providerType == .gemini {
