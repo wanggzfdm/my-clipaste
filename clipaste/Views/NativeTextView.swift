@@ -12,11 +12,13 @@ struct NativeTextView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
         scrollView.drawsBackground = false
 
-        guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
-        let quickLookTextView = QuickLookSelectableTextView(frame: textView.frame)
-        quickLookTextView.textContainer = textView.textContainer
-        quickLookTextView.textStorage?.setAttributedString(textView.attributedString())
-        quickLookTextView.delegate = textView.delegate
+        guard let textView = scrollView.documentView as? NSTextView,
+              let existingContainer = textView.textContainer else { return scrollView }
+        let existingDelegate = textView.delegate
+        // 使用 init(frame:textContainer:) 直接复用已有的 textContainer，
+        // 避免二次赋值导致 layoutManager/textStorage 绑定断裂。
+        let quickLookTextView = QuickLookSelectableTextView(frame: textView.frame, textContainer: existingContainer)
+        quickLookTextView.delegate = existingDelegate
         scrollView.documentView = quickLookTextView
 
         // 核心配置：只读、可选中
