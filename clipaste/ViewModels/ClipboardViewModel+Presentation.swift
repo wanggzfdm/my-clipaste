@@ -56,7 +56,6 @@ extension ClipboardViewModel {
             generation: generation,
             mode: .visibleFirst
         )
-        loadCustomGroups()
     }
 
     func endPresentation() {

@@ -520,6 +520,10 @@ final class StorageManager {
     @MainActor
     func fetchAllGroupsOnMain() -> [ClipboardGroupItem] {
         let context = container.mainContext
+        // 清除 mainContext 的内存对象缓存，确保从持久化层读取最新数据。
+        // 解决冷启动 / 同步路由切换后 fetchAllGroups 返回空数组的问题。
+        context.rollback()
+
         let descriptor = FetchDescriptor<ClipboardGroupModel>(
             predicate: #Predicate<ClipboardGroupModel> { group in
                 group.deletedAt == nil
