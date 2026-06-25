@@ -143,10 +143,10 @@ struct ClipboardHeaderView: View {
             Spacer(minLength: 20)
 
             HStack(spacing: 6) {
+                horizontalSearchBar
+
                 horizontalHybridGroupBar
                     .layoutPriority(1)
-
-                horizontalSearchBar
             }
 
             Spacer(minLength: 20)
