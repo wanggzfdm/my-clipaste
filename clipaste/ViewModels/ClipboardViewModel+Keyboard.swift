@@ -203,6 +203,12 @@ extension ClipboardViewModel {
                 }
 
                 if keyCode == 36 {
+                    // When IME is composing (marked text exists), let the Return key commit the composition
+                    if let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
+                       textView.hasMarkedText() {
+                        return event
+                    }
+
                     if isQuickLookActive {
                         toggleQuickLook()
                         return nil
