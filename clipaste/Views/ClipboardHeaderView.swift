@@ -26,6 +26,7 @@ struct ClipboardHeaderView: View {
     @State private var targetedGroupId: String? = nil
     @State private var targetedBuiltInGroup: ClipboardBuiltInGroup? = nil
     @State private var groupTabFrames: [String: CGRect] = [:]
+    @State private var scrollableGroupTabsContentWidth: CGFloat = 0
     @State private var reorderTarget: GroupReorderTarget? = nil
     @State private var isShowingGroupOverflowPopover = false
     @State private var isShowingAIModelPopover = false
@@ -170,14 +171,16 @@ struct ClipboardHeaderView: View {
         let builtInAndSmartDividerWidth: CGFloat =
             (!viewModel.visibleBuiltInGroups.isEmpty && !viewModel.visibleSmartFilters.isEmpty) ? 14 : 0
 
-        return min(
-            680,
-            customGroupWidth
-                + builtInGroupWidth
-                + smartFilterWidth
-                + customAndBuiltInDividerWidth
-                + builtInAndSmartDividerWidth
-        )
+        let estimatedWidth = customGroupWidth
+            + builtInGroupWidth
+            + smartFilterWidth
+            + customAndBuiltInDividerWidth
+            + builtInAndSmartDividerWidth
+        let measuredWidth = scrollableGroupTabsContentWidth > 0
+            ? scrollableGroupTabsContentWidth
+            : estimatedWidth
+
+        return min(680, measuredWidth)
     }
 
     private var horizontalLeadingControls: some View {
@@ -323,9 +326,21 @@ struct ClipboardHeaderView: View {
         }
         .padding(.horizontal, isVerticalLayout ? 1 : 2)
         .fixedSize(horizontal: true, vertical: false)
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .preference(
+                        key: GroupTabsContentWidthPreferenceKey.self,
+                        value: proxy.size.width
+                    )
+            }
+        }
         .coordinateSpace(.named(GroupBarDropSpace.name))
         .onPreferenceChange(GroupTabFramePreferenceKey.self) { frames in
             groupTabFrames = frames
+        }
+        .onPreferenceChange(GroupTabsContentWidthPreferenceKey.self) { width in
+            scrollableGroupTabsContentWidth = width
         }
         .onDrop(
             of: [ClipboardDragType.group],
@@ -1397,6 +1412,14 @@ private struct GroupReorderTarget: Equatable {
 
 private enum GroupBarDropSpace {
     static let name = "ClipboardHeader.GroupBarDropSpace"
+}
+
+private struct GroupTabsContentWidthPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
 }
 
 private struct GroupTabFramePreferenceKey: PreferenceKey {
