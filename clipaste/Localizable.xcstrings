@@ -1453,6 +1453,9 @@
         }
       }
     },
+    "Added to Group" : {
+
+    },
     "Advanced" : {
       "localizations" : {
         "de" : {
@@ -14392,10 +14395,8 @@
     "Preview Translation" : {
 
     },
-    "Preview translation is available for text content." : {
-
-    },
     "Preview truncated to protect memory. Pasting is not affected." : {
+      "extractionState" : "stale",
       "localizations" : {
         "de" : {
           "stringUnit" : {
@@ -16643,6 +16644,9 @@
           }
         }
       }
+    },
+    "Saved" : {
+
     },
     "Seamlessly sync clipboard history across all Macs signed in with the same Apple ID." : {
       "extractionState" : "stale",
@@ -19978,9 +19982,6 @@
     "Translate To" : {
 
     },
-    "Translating preview…" : {
-
-    },
     "Translating…" : {
 
     },
@@ -21360,6 +21361,9 @@
     "关闭预览" : {
 
     },
+    "加入分组" : {
+
+    },
     "单击复制，双击粘贴" : {
 
     },
@@ -21437,6 +21441,15 @@
 
     },
     "在 Obsidian 中打开" : {
+
+    },
+    "复制" : {
+
+    },
+    "复制全文" : {
+
+    },
+    "复制选中内容" : {
 
     },
     "导入器会读取 JSON 结构中的历史条目，并映射到 Clipaste 的 SwiftData 模型。" : {
@@ -21687,13 +21700,25 @@
     "显示 / 隐藏剪贴板面板" : {
 
     },
+    "暂无自定义分组" : {
+
+    },
+    "更多" : {
+
+    },
     "正在翻译…" : {
+
+    },
+    "此项目不支持文本编辑" : {
 
     },
     "浮入" : {
 
     },
     "空格预览" : {
+
+    },
+    "编辑" : {
 
     },
     "编辑器类型" : {
@@ -21742,10 +21767,10 @@
         }
       }
     },
-    "翻译" : {
+    "编辑并保存内容" : {
 
     },
-    "翻译选中内容" : {
+    "翻译" : {
 
     },
     "翻译选中文本" : {

@@ -54,6 +54,7 @@ final class ClipboardViewModel: ObservableObject {
     @Published var isLoadingMoreHistory = false
     var lastSelectedID: UUID? = nil
     @Published var quickLookItem: ClipboardItem? = nil
+    @Published var quickLookAnchorFramesByItemID: [UUID: CGRect] = [:]
     @Published var forceQuickLookTranslate: Bool = false
     @Published var quickLookTranslationOverrideText: String? = nil
     @Published var operationNotice: String? = nil
@@ -127,6 +128,21 @@ final class ClipboardViewModel: ObservableObject {
         setupSmartGroupsGuard()
         setupModifierPreferenceSync()
         hydrateFromWarmCacheIfAvailable()
+    }
+
+    func updateQuickLookAnchorFrame(itemID: UUID, frame: CGRect) {
+        guard frame.isNull == false, frame.isEmpty == false else { return }
+        if quickLookAnchorFramesByItemID[itemID] != frame {
+            quickLookAnchorFramesByItemID[itemID] = frame
+        }
+    }
+
+    func removeQuickLookAnchorFrame(itemID: UUID) {
+        quickLookAnchorFramesByItemID[itemID] = nil
+    }
+
+    func quickLookAnchorFrame(for itemID: UUID) -> CGRect? {
+        quickLookAnchorFramesByItemID[itemID]
     }
 
     deinit {

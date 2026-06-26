@@ -107,13 +107,56 @@ struct ClipboardQuickLookWindowPresenter: NSViewRepresentable {
             guard let screen = targetScreen() else { return }
             let contentSize = measuredContentSize(for: screen)
 
-            let screenFrame = screen.frame
             let frameSize = panel.frameRect(forContentRect: NSRect(origin: .zero, size: contentSize)).size
-            let origin = NSPoint(
-                x: screenFrame.midX - frameSize.width / 2,
-                y: screenFrame.midY - frameSize.height / 2
-            )
+            let origin = preferredBubbleOrigin(frameSize: frameSize, screen: screen)
             panel.setFrame(NSRect(origin: origin, size: frameSize), display: true)
+        }
+
+        private func preferredBubbleOrigin(frameSize: NSSize, screen: NSScreen) -> NSPoint {
+            let visibleFrame = screen.visibleFrame
+            let gap: CGFloat = 10
+
+            if let itemAnchorFrame = currentItemAnchorFrame() {
+                let proposedX = itemAnchorFrame.midX - frameSize.width / 2
+                let aboveY = itemAnchorFrame.maxY + gap
+                let belowY = itemAnchorFrame.minY - frameSize.height - gap
+                let clampedX = min(
+                    max(proposedX, visibleFrame.minX + 12),
+                    visibleFrame.maxX - frameSize.width - 12
+                )
+
+                if aboveY + frameSize.height <= visibleFrame.maxY - 12 {
+                    return NSPoint(x: clampedX, y: aboveY)
+                }
+
+                if belowY >= visibleFrame.minY + 12 {
+                    return NSPoint(x: clampedX, y: belowY)
+                }
+
+                let clampedY = min(
+                    max(aboveY, visibleFrame.minY + 12),
+                    visibleFrame.maxY - frameSize.height - 12
+                )
+                return NSPoint(x: clampedX, y: clampedY)
+            }
+
+            if let anchorWindow = anchorView?.window {
+                let anchorFrame = anchorWindow.frame
+                let proposedX = anchorFrame.midX - frameSize.width / 2
+                let proposedY = anchorFrame.maxY + gap
+                let clampedX = min(max(proposedX, visibleFrame.minX + 12), visibleFrame.maxX - frameSize.width - 12)
+                return NSPoint(x: clampedX, y: min(proposedY, visibleFrame.maxY - frameSize.height - 12))
+            }
+
+            return NSPoint(
+                x: visibleFrame.midX - frameSize.width / 2,
+                y: visibleFrame.midY - frameSize.height / 2
+            )
+        }
+
+        private func currentItemAnchorFrame() -> CGRect? {
+            guard let presentedItem else { return nil }
+            return currentViewModel?.quickLookAnchorFrame(for: presentedItem.id)
         }
 
         private func scheduleDeferredLayouts() {
@@ -142,7 +185,7 @@ struct ClipboardQuickLookWindowPresenter: NSViewRepresentable {
             } else if item.fastParsedColor != nil {
                 proposedSize = NSSize(width: 280, height: 120)
             } else {
-                proposedSize = NSSize(width: 732, height: 632)
+                proposedSize = NSSize(width: 800, height: 610)
             }
 
             let maxSize = NSSize(
@@ -153,15 +196,19 @@ struct ClipboardQuickLookWindowPresenter: NSViewRepresentable {
             let heightScale = maxSize.height / max(proposedSize.height, 1)
             let scale = min(1, widthScale, heightScale)
 
+            let tailSpace: CGFloat = 8
             return NSSize(
                 width: max(280, proposedSize.width * scale),
-                height: max(120, proposedSize.height * scale)
+                height: max(120, proposedSize.height * scale) + tailSpace
             )
         }
 
         private func targetScreen() -> NSScreen? {
-            if let screen = NSScreen.screenContainingMouse {
-                return screen
+            if let itemAnchorFrame = currentItemAnchorFrame() {
+                let anchorCenter = NSPoint(x: itemAnchorFrame.midX, y: itemAnchorFrame.midY)
+                if let screen = NSScreen.screens.first(where: { $0.frame.contains(anchorCenter) }) {
+                    return screen
+                }
             }
 
             if let window = anchorView?.window {
@@ -169,6 +216,10 @@ struct ClipboardQuickLookWindowPresenter: NSViewRepresentable {
                 if let screen = NSScreen.screens.first(where: { $0.frame.contains(windowCenter) }) {
                     return screen
                 }
+            }
+
+            if let screen = NSScreen.screenContainingMouse {
+                return screen
             }
 
             return NSScreen.main ?? NSScreen.screens.first
@@ -208,6 +259,72 @@ private final class ClipboardQuickLookFloatingPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+private struct BubbleTailShape: Shape {
+    var bodyCornerRadius: CGFloat = 16
+    var tailWidth: CGFloat = 14
+    var tailHeight: CGFloat = 8
+
+    func path(in rect: CGRect) -> Path {
+        let r = bodyCornerRadius
+        let tw = tailWidth
+        let th = tailHeight
+
+        // The body occupies the top portion; the tail hangs below it
+        let bodyBottom = rect.maxY - th
+        let tailCenterX = rect.midX
+
+        var path = Path()
+
+        // Top-left corner
+        path.addArc(
+            center: CGPoint(x: rect.minX + r, y: rect.minY + r),
+            radius: r,
+            startAngle: .degrees(180),
+            endAngle: .degrees(270),
+            clockwise: false
+        )
+        // Top edge
+        path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+        // Top-right corner
+        path.addArc(
+            center: CGPoint(x: rect.maxX - r, y: rect.minY + r),
+            radius: r,
+            startAngle: .degrees(270),
+            endAngle: .degrees(0),
+            clockwise: false
+        )
+        // Right edge down to body bottom
+        path.addLine(to: CGPoint(x: rect.maxX, y: bodyBottom - r))
+        // Bottom-right corner
+        path.addArc(
+            center: CGPoint(x: rect.maxX - r, y: bodyBottom - r),
+            radius: r,
+            startAngle: .degrees(0),
+            endAngle: .degrees(90),
+            clockwise: false
+        )
+        // Bottom edge → right base of tail
+        path.addLine(to: CGPoint(x: tailCenterX + tw / 2, y: bodyBottom))
+        // Tail triangle: tip pointing down
+        path.addLine(to: CGPoint(x: tailCenterX, y: bodyBottom + th))
+        path.addLine(to: CGPoint(x: tailCenterX - tw / 2, y: bodyBottom))
+        // Bottom edge ← left base of tail → bottom-left corner
+        path.addLine(to: CGPoint(x: rect.minX + r, y: bodyBottom))
+        // Bottom-left corner
+        path.addArc(
+            center: CGPoint(x: rect.minX + r, y: bodyBottom - r),
+            radius: r,
+            startAngle: .degrees(90),
+            endAngle: .degrees(180),
+            clockwise: false
+        )
+        // Left edge
+        path.closeSubpath()
+
+        return path
+    }
+}
+
 private struct ClipboardCenteredQuickLookContent: View {
     let item: ClipboardItem
     @ObservedObject var viewModel: ClipboardViewModel
@@ -217,9 +334,9 @@ private struct ClipboardCenteredQuickLookContent: View {
             .background {
                 VisualEffectView(material: .popover, blendingMode: .behindWindow)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(BubbleTailShape())
             .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                BubbleTailShape()
                     .stroke(.white.opacity(0.18), lineWidth: 1)
             }
     }

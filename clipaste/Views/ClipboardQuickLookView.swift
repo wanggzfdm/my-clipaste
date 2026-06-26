@@ -5,53 +5,152 @@ import os
 struct ClipboardQuickLookView: View {
     let item: ClipboardItem
     @ObservedObject var viewModel: ClipboardViewModel
-    @State private var isHoveringCloseButton = false
+
+    @State private var selectedTextForCopy: String?
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            VStack(alignment: .leading, spacing: 0) {
-                if item.contentType == .image {
-                    ClipboardQuickLookImageView(viewModel: viewModel)
-                } else if let parsedColor = item.fastParsedColor {
-                    // 颜色预览：大色块 + 对比色等宽文字
-                    ZStack {
-                        parsedColor
-                        Text(item.rawText ?? item.textPreview)
-                            .font(.system(size: 28, weight: .bold, design: .monospaced))
-                            .foregroundColor(parsedColor.isDark ? .white : .black)
-                    }
-                    .frame(width: 280, height: 120)
-
-                } else {
-                    ClipboardQuickLookTextContent(item: item, viewModel: viewModel)
-                }
-            }
-            .onHover { hovering in
-                viewModel.handleAutoPreviewPopoverHover(for: item, isHovering: hovering)
-            }
-            
-            // 关闭按钮
-            Button(action: {
-                viewModel.dismissQuickLook()
-            }) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(isHoveringCloseButton ? .primary : .secondary)
-                    .frame(width: 24, height: 24)
-                    .background(
-                        Circle()
-                            .fill(.ultraThinMaterial)
-                            .opacity(isHoveringCloseButton ? 0.85 : 0.6)
+        Group {
+            if usesEditorOnlyPreview {
+                quickLookContent
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ClipboardQuickLookHeader(
+                        item: item,
+                        viewModel: viewModel,
+                        selectedTextForCopy: selectedTextForCopy
                     )
+
+                    quickLookContent
+                }
+                .padding(10)
             }
-            .buttonStyle(.plain)
-            .padding(12)
-            .onHover { hovering in
-                isHoveringCloseButton = hovering
-            }
-            .help("关闭预览")
         }
-        // Popover 原生自带材质背景，无需额外设置
+        .onHover { hovering in
+            viewModel.handleAutoPreviewPopoverHover(for: item, isHovering: hovering)
+        }
+        .onChange(of: item.id) { _, _ in
+            selectedTextForCopy = nil
+        }
+    }
+
+    private var usesEditorOnlyPreview: Bool {
+        item.contentType != .image && item.fastParsedColor == nil
+    }
+
+    @ViewBuilder
+    private var quickLookContent: some View {
+        if item.contentType == .image {
+            ClipboardQuickLookImageView(viewModel: viewModel)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .padding(.top, 8)
+        } else if let parsedColor = item.fastParsedColor {
+            ZStack {
+                parsedColor
+                Text(item.rawText ?? item.textPreview)
+                    .font(.system(size: 28, weight: .bold, design: .monospaced))
+                    .foregroundColor(parsedColor.isDark ? .white : .black)
+                    .textSelection(.enabled)
+                    .padding(18)
+            }
+            .frame(width: 280, height: 120)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .padding(.top, 8)
+        } else {
+            ClipboardQuickLookTextContent(
+                item: item,
+                viewModel: viewModel,
+                selectedTextForCopy: $selectedTextForCopy
+            )
+        }
+    }
+}
+
+private struct ClipboardQuickLookHeader: View {
+    let item: ClipboardItem
+    @ObservedObject var viewModel: ClipboardViewModel
+    let selectedTextForCopy: String?
+
+    private var canEditTextContent: Bool {
+        item.isObsidianSearchResult == false && item.contentType != .image
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button("关闭预览", systemImage: "xmark.circle.fill", action: viewModel.dismissQuickLook)
+                .labelStyle(.iconOnly)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .buttonStyle(.plain)
+                .accessibilityLabel("关闭预览")
+
+            Text(item.typeBadgeTitle())
+                .font(.title3.bold())
+                .lineLimit(1)
+
+            Spacer(minLength: 20)
+
+            Button("更多", systemImage: "circle.dashed") {}
+                .labelStyle(.iconOnly)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.secondary)
+                .buttonStyle(PasteBubbleIconButtonStyle())
+                .disabled(true)
+                .accessibilityHidden(true)
+
+            Image(systemName: "chevron.down")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            Button("复制", systemImage: "square.and.arrow.up") {
+                viewModel.copyQuickLookItem(item, selectedText: selectedTextForCopy)
+            }
+            .labelStyle(.iconOnly)
+            .font(.system(size: 19, weight: .medium))
+            .buttonStyle(PasteBubbleIconButtonStyle())
+            .help(selectedTextForCopy == nil ? "复制全文" : "复制选中内容")
+
+            Button("编辑") {
+                viewModel.editItemContent(item: item)
+            }
+            .font(.headline)
+            .buttonStyle(PasteBubbleEditButtonStyle())
+            .disabled(canEditTextContent == false)
+            .help(canEditTextContent ? "编辑并保存内容" : "此项目不支持文本编辑")
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+    }
+}
+
+private struct PasteBubbleIconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(width: 32, height: 32)
+            .foregroundStyle(configuration.isPressed ? .primary : .secondary)
+            .background(
+                Circle()
+                    .fill(Color.white.opacity(configuration.isPressed ? 0.16 : 0.07))
+            )
+            .contentShape(Circle())
+    }
+}
+
+private struct PasteBubbleEditButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 16)
+            .frame(height: 34)
+            .foregroundStyle(.primary)
+            .background(
+                Capsule()
+                    .fill(Color.white.opacity(configuration.isPressed ? 0.16 : 0.08))
+            )
+            .overlay {
+                Capsule()
+                    .stroke(Color.white.opacity(0.06), lineWidth: 1)
+            }
     }
 }
 
@@ -83,181 +182,166 @@ private struct ClipboardQuickLookLinkContent: View {
 private struct ClipboardQuickLookTextContent: View {
     let item: ClipboardItem
     @ObservedObject var viewModel: ClipboardViewModel
+    @Binding var selectedTextForCopy: String?
 
-    @State private var highlightedAttr: NSAttributedString?
-    @State private var translationState: QuickLookTranslationState = .idle
-    @State private var isHoveringTranslation = false
+    @State private var draftText: String
+    @State private var draftRTFData: Data?
+    @State private var lastLoadedItemID: UUID
+    @FocusState private var isTextViewFocused: Bool
 
-    private var safeText: String {
-        let fullText = item.rawText ?? item.textPreview
-        if fullText.utf8.count > 200_000 {
-            return String(fullText.prefix(100_000))
-                + "\n\n"
-                + String(localized: "Preview truncated to protect memory. Pasting is not affected.")
-        }
-        return fullText
+    init(
+        item: ClipboardItem,
+        viewModel: ClipboardViewModel,
+        selectedTextForCopy: Binding<String?>
+    ) {
+        self.item = item
+        self.viewModel = viewModel
+        _selectedTextForCopy = selectedTextForCopy
+        let initialText = Self.initialText(for: item)
+        _draftText = State(initialValue: initialText)
+        _lastLoadedItemID = State(initialValue: item.id)
     }
 
     var body: some View {
-        NativeTextView(
-            text: safeText,
-            attributedText: highlightedAttr,
-            onTranslateSelection: translateSelectedText
+        SimpleTextViewEditor(
+            text: $draftText,
+            rtfData: $draftRTFData,
+            isFocused: $isTextViewFocused,
+            onSelectionChange: { selectedTextForCopy = $0 }
         )
-            .frame(
-                minWidth: 400,
-                idealWidth: 500,
-                maxWidth: 700,
-                minHeight: 300,
-                idealHeight: 400,
-                maxHeight: 600
-            )
-            .overlay(alignment: .bottomLeading) {
-                translationOverlay
-            }
-            .padding(16)
-            .task(id: item.contentHash) {
-                highlightedAttr = await ClipboardQuickLookTextLoader.loadHighlightedText(for: item)
-            }
-            .task(id: translationTaskID) {
-                await refreshTranslation()
-            }
+        .frame(
+            minWidth: 560,
+            idealWidth: 700,
+            maxWidth: 760,
+            minHeight: 360,
+            idealHeight: 430,
+            maxHeight: 560
+        )
+        .background(Color(NSColor.windowBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        }
+        .padding(10)
+        .onAppear(perform: focusEditor)
+        .onChange(of: item.id) { _, _ in
+            reloadDraftIfNeeded()
+            focusEditor()
+        }
     }
 
-    private var translationTaskID: String {
-        "\(item.id)-\(viewModel.forceQuickLookTranslate)-\(viewModel.quickLookTranslationOverrideText?.hashValue ?? 0)"
+    private static func initialText(for item: ClipboardItem) -> String {
+        item.rawText ?? item.previewText ?? item.textPreview
     }
 
-    private func translateSelectedText(_ text: String) {
-        viewModel.quickLookTranslationOverrideText = text
-        viewModel.forceQuickLookTranslate = true
+    private func reloadDraftIfNeeded() {
+        guard lastLoadedItemID != item.id else { return }
+        lastLoadedItemID = item.id
+        draftText = Self.initialText(for: item)
+        draftRTFData = nil
+        selectedTextForCopy = nil
     }
 
-    @ViewBuilder
-    private var translationOverlay: some View {
-        switch translationState {
-        case .idle:
-            EmptyView()
-        case .skipped(let message), .unavailable(let message):
-            translationCard {
-                Label(message, systemImage: "sparkles")
-                    .font(.system(size: 12))
+    private func focusEditor() {
+        DispatchQueue.main.async {
+            isTextViewFocused = true
+        }
+    }
+}
+
+private struct ClipboardQuickLookFooter: View {
+    let text: String
+    let item: ClipboardItem
+    @ObservedObject var viewModel: ClipboardViewModel
+
+    private var characterCount: Int { text.count }
+
+    private var wordCount: Int {
+        text.split(whereSeparator: \.isWhitespace).count
+    }
+
+    private var lineCount: Int {
+        max(1, text.split(separator: "\n", omittingEmptySubsequences: false).count)
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            footerText("\(characterCount) 个字符")
+            separator
+            footerText("\(wordCount) 单词")
+            separator
+            footerText("\(lineCount) 行")
+
+            Spacer(minLength: 18)
+
+            ClipboardQuickLookGroupMenu(item: item, viewModel: viewModel)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+    }
+
+    private var separator: some View {
+        Text("·")
+            .font(.callout)
+            .foregroundStyle(.secondary.opacity(0.55))
+    }
+
+    private func footerText(_ text: String) -> some View {
+        Text(verbatim: text)
+            .font(.callout.weight(.semibold))
+            .foregroundStyle(.secondary)
+    }
+}
+
+private struct ClipboardQuickLookGroupMenu: View {
+    let item: ClipboardItem
+    @ObservedObject var viewModel: ClipboardViewModel
+
+    private var canAssignGroup: Bool {
+        item.isObsidianSearchResult == false && viewModel.customGroups.isEmpty == false
+    }
+
+    var body: some View {
+        Menu {
+            if viewModel.customGroups.isEmpty {
+                Text("No Groups")
                     .foregroundStyle(.secondary)
-            }
-        case .translating:
-            translationCard {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .controlSize(.small)
-
-                    Text("Translating preview…")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+            } else {
+                ForEach(viewModel.customGroups) { group in
+                    Button {
+                        viewModel.assignQuickLookItem(item, to: group)
+                    } label: {
+                        if item.groupIDs.contains(group.id) {
+                            Label {
+                                Text(verbatim: group.name)
+                            } icon: {
+                                Image(systemName: "checkmark")
+                            }
+                        } else {
+                            GroupMenuLabel(title: group.name, iconName: group.systemIconName)
+                        }
+                    }
+                    .disabled(item.groupIDs.contains(group.id))
                 }
             }
-        case .translated(let text):
-            translationCard(isInteractive: true) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Label(viewModel.quickLookTranslationOverrideText == nil ? "翻译" : "翻译选中内容", systemImage: "character.bubble")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-
-                    Text(text)
-                        .font(.system(size: 13))
-                        .lineSpacing(3)
-                        .lineLimit(8)
-                        .textSelection(.enabled)
-                }
+        } label: {
+            HStack(spacing: -7) {
+                Circle().fill(Color.blue.opacity(0.78))
+                Circle().fill(Color.purple.opacity(0.78))
+                Circle().fill(Color.pink.opacity(0.78))
             }
-            .contentShape(RoundedRectangle(cornerRadius: 8))
-            .onTapGesture {
-                viewModel.copyQuickLookTranslation(text)
-            }
-            .onHover { hovering in
-                isHoveringTranslation = hovering
-                if hovering {
-                    NSCursor.pointingHand.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-        case .failed(let message):
-            translationCard {
-                Label(message, systemImage: "exclamationmark.triangle")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
+            .frame(width: 52, height: 22)
+            .blur(radius: canAssignGroup ? 0.2 : 1.4)
+            .opacity(canAssignGroup ? 1 : 0.45)
+            .contentShape(Rectangle())
         }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .disabled(canAssignGroup == false)
+        .help(canAssignGroup ? "加入分组" : "暂无自定义分组")
     }
-
-    private func translationCard<Content: View>(
-        isInteractive: Bool = false,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        content()
-            .padding(10)
-            .frame(maxWidth: 640, alignment: .leading)
-            .background(
-                isInteractive && isHoveringTranslation
-                    ? AnyShapeStyle(.selection.opacity(0.18))
-                    : AnyShapeStyle(.regularMaterial),
-                in: RoundedRectangle(cornerRadius: 8)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(
-                        isInteractive && isHoveringTranslation
-                            ? Color.accentColor.opacity(0.35)
-                            : Color.primary.opacity(0.08),
-                        lineWidth: 1
-                    )
-            }
-            .shadow(color: Color.black.opacity(0.12), radius: 6, y: 2)
-            .padding(12)
-    }
-
-    @MainActor
-    private func refreshTranslation() async {
-        translationState = .idle
-
-        os_log("[QuickLookTranslation] Starting for item: %{public}@, contentType: %{public}@, hasRTF: %{public}d", type: .info, item.id.uuidString, item.contentType.rawValue, item.hasRTF)
-
-        let forceTranslate = viewModel.forceQuickLookTranslate
-        guard forceTranslate else {
-            os_log("[QuickLookTranslation] Skipped: translation was not explicitly requested", type: .info)
-            return
-        }
-
-        let sourceText = viewModel.quickLookTranslationOverrideText ?? safeText
-        guard let request = QuickLookTranslationRequest(item: item, text: sourceText, forceTranslate: forceTranslate) else {
-            os_log("[QuickLookTranslation] Skipped: request unavailable", type: .info)
-            translationState = .skipped(String(localized: "Preview translation is available for text content."))
-            return
-        }
-
-        guard let configuration = QuickLookAutoTranslator.activeConfiguration else {
-            let settings = AISettingsViewModel.shared
-            os_log("[QuickLookTranslation] No active config: isAIEnabled=%{public}d, activeID=%{public}@, configsCount=%{public}d", type: .error, settings.isAIEnabled ? 1 : 0, settings.activeConfigurationID?.uuidString ?? "nil", settings.configurations.count)
-            translationState = .unavailable(String(localized: "No active AI configuration is available."))
-            return
-        }
-
-        try? await Task.sleep(for: .milliseconds(180))
-        guard Task.isCancelled == false else { return }
-        translationState = .translating
-
-        do {
-            os_log("[QuickLookTranslation] Running preview translation skill (%{public}d chars)", type: .info, request.text.count)
-            let translated = try await QuickLookAutoTranslator.translate(item: item, text: request.text, configuration: configuration)
-            guard Task.isCancelled == false else { return }
-            translationState = .translated(translated)
-        } catch {
-            os_log("[QuickLookTranslation] Failed: %{public}@", type: .error, error.localizedDescription)
-            guard Task.isCancelled == false else { return }
-            translationState = .failed(error.localizedDescription)
-        }
-    }
-
 }
 
 private enum QuickLookTranslationState: Equatable {

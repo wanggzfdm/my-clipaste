@@ -204,6 +204,39 @@ extension ClipboardViewModel {
         }
     }
 
+    func copyQuickLookItem(_ item: ClipboardItem, selectedText: String?) {
+        if let selectedText, selectedText.isEmpty == false {
+            PasteEngine.shared.writePlainTextToPasteboard(text: selectedText)
+            playCopySound()
+            showOperationNotice(String(localized: "Copied"))
+            return
+        }
+
+        Task { @MainActor in
+            if item.contentType == .image {
+                guard let record = await pasteRecord(for: item),
+                      await PasteEngine.shared.writeToPasteboard(record: record, preferPlainText: shouldForcePlainTextOutput) else {
+                    return
+                }
+                playCopySound()
+                showOperationNotice(String(localized: "Copied"))
+                return
+            }
+
+            guard let text = await plainText(for: item) ?? item.rawText ?? item.previewText ?? (item.textPreview.isEmpty ? nil : item.textPreview) else {
+                return
+            }
+            PasteEngine.shared.writePlainTextToPasteboard(text: text)
+            playCopySound()
+            showOperationNotice(String(localized: "Copied"))
+        }
+    }
+
+    func assignQuickLookItem(_ item: ClipboardItem, to group: ClipboardGroupItem) {
+        assignItemToGroup(item: item, group: group)
+        showOperationNotice(String(localized: "Added to Group"))
+    }
+
     func playCopySound() {
         settingsViewModel.playCopySound()
     }
@@ -243,6 +276,8 @@ extension ClipboardViewModel {
         let windowSize = NSSize(width: 580, height: 480)
         let targetFrame = EditWindowManager.targetFrame(windowSize: windowSize, overPanelFrame: pendingPanelFrame)
         
+        TypeToSearchService.shared.isPaused = true
+
         let window = NSWindow(
             contentRect: targetFrame,
             styleMask: [.titled, .closable, .resizable],
@@ -256,6 +291,7 @@ extension ClipboardViewModel {
             item: item,
             onCancel: { [weak window] in
                 window?.close()
+                TypeToSearchService.shared.isPaused = false
             }
         ) { [weak self] newText, newRTFData in
             guard let self = self else { return }
@@ -386,6 +422,7 @@ extension ClipboardViewModel {
                 sourceBundleIdentifier: item.sourceBundleIdentifier,
                 appName: item.appName,
                 appIcon: item.appIcon,
+                appIconDominantColorHex: item.appIconDominantColorHex,
                 appIconName: item.appIconName,
                 timestamp: item.timestamp,
                 rawText: newText,
@@ -407,7 +444,11 @@ extension ClipboardViewModel {
                 captureMethodRawValue: item.captureMethodRawValue,
                 captureSessionID: item.captureSessionID
             )
+            if quickLookItem?.id == item.id {
+                quickLookItem = items[index]
+            }
             refreshDisplayedItemsFromCurrentScope()
+            showOperationNotice(String(localized: "Saved"))
         }
 
         StorageManager.shared.updateRecordText(hash: item.contentHash, newText: newText)

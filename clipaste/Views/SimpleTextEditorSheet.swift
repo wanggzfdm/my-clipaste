@@ -202,6 +202,7 @@ struct SimpleTextViewEditor: NSViewRepresentable {
     @Binding var text: String
     @Binding var rtfData: Data?
     @FocusState.Binding var isFocused: Bool
+    var onSelectionChange: ((String?) -> Void)? = nil
     
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
@@ -255,6 +256,12 @@ struct SimpleTextViewEditor: NSViewRepresentable {
         if !isFocused, textView.string != text {
             textView.string = text
         }
+
+        if isFocused, textView.window?.firstResponder !== textView {
+            DispatchQueue.main.async {
+                textView.window?.makeFirstResponder(textView)
+            }
+        }
         
         // updateNSView 是 SwiftUI 的视图更新阶段，不能在这里同步写 Binding，
         // 否则会触发 “Modifying state during view update” 并可能导致窗口显示异常。
@@ -294,6 +301,32 @@ struct SimpleTextViewEditor: NSViewRepresentable {
                 ) {
                     self.parent.rtfData = rtf
                 }
+            }
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            let selectedText = textView.selectedRanges
+                .compactMap { $0 as? NSRange }
+                .filter { $0.length > 0 }
+                .compactMap { Range($0, in: textView.string) }
+                .map { String(textView.string[$0]) }
+                .joined(separator: "\n")
+
+            DispatchQueue.main.async { [weak self] in
+                self?.parent.onSelectionChange?(selectedText.isEmpty ? nil : selectedText)
+            }
+        }
+
+        func textDidBeginEditing(_ notification: Notification) {
+            DispatchQueue.main.async { [weak self] in
+                self?.parent.isFocused = true
+            }
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            DispatchQueue.main.async { [weak self] in
+                self?.parent.isFocused = false
             }
         }
         

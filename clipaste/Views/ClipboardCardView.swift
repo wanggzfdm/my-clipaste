@@ -186,6 +186,10 @@ struct ClipboardCardView: View {
                 }
             }
         }
+        .background {
+            ClipboardQuickLookAnchorReporter(itemID: item.id, viewModel: viewModel)
+                .allowsHitTesting(false)
+        }
         .overlay(alignment: .bottomTrailing) {
             bottomAccessory
         }
