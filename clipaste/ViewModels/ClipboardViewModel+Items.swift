@@ -4,7 +4,7 @@ import SwiftUI
 extension ClipboardViewModel {
     func item(for id: UUID) -> ClipboardItem? {
         guard let index = itemIndexByID[id], items.indices.contains(index) else {
-            return obsidianSearchItems.first { $0.id == id }
+            return nil
         }
 
         return items[index]
@@ -17,10 +17,10 @@ extension ClipboardViewModel {
 
     func rematerializeDisplayedItems() {
         let materialised = displayedItemIDs.compactMap { id -> ClipboardItem? in
-            if let index = itemIndexByID[id], items.indices.contains(index) {
-                return items[index]
+            guard let index = itemIndexByID[id], items.indices.contains(index) else {
+                return nil
             }
-            return obsidianSearchItems.first { $0.id == id }
+            return items[index]
         }
         if materialised != displayedItems {
             displayedItems = materialised

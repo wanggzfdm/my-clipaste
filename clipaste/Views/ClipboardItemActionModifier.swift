@@ -51,15 +51,7 @@ private struct ClipboardItemTapBehaviorModifier: ViewModifier {
     let singleClickPaste: Bool
 
     func body(content: Content) -> some View {
-        if item.isObsidianSearchResult {
-            content
-                .simultaneousGesture(TapGesture().onEnded {
-                    viewModel.handlePrimaryClickSelection(for: item.id)
-                })
-                .simultaneousGesture(TapGesture(count: 2).onEnded {
-                    viewModel.openInObsidian(item: item)
-                })
-        } else if singleClickPaste {
+        if singleClickPaste {
             content
                 .simultaneousGesture(TapGesture().onEnded {
                     viewModel.handlePrimaryClickSelection(for: item.id)

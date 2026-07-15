@@ -80,14 +80,6 @@ final class SettingsViewModel: @preconcurrency ObservableObject {
         willSet { objectWillChange.send() }
     }
 
-    @AppStorage("obsidianSearchEnabled") var obsidianSearchEnabled: Bool = false {
-        willSet { objectWillChange.send() }
-    }
-
-    @AppStorage("obsidianVaultPath") var obsidianVaultPath: String = "" {
-        willSet { objectWillChange.send() }
-    }
-
     @AppStorage("requireCmdToDelete") var requireCmdToDelete: Bool = false {
         willSet { objectWillChange.send() }
     }

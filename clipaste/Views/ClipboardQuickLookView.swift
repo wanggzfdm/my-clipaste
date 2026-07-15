@@ -71,7 +71,7 @@ private struct ClipboardQuickLookHeader: View {
     let selectedTextForCopy: String?
 
     private var canEditTextContent: Bool {
-        item.isObsidianSearchResult == false && item.contentType != .image
+        item.contentType != .image
     }
 
     var body: some View {
@@ -300,7 +300,7 @@ private struct ClipboardQuickLookGroupMenu: View {
     @ObservedObject var viewModel: ClipboardViewModel
 
     private var canAssignGroup: Bool {
-        item.isObsidianSearchResult == false && viewModel.customGroups.isEmpty == false
+        viewModel.customGroups.isEmpty == false
     }
 
     var body: some View {

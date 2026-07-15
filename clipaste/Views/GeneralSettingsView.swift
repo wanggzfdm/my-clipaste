@@ -20,7 +20,6 @@ struct GeneralSettingsView: View {
         Form {
             appearanceSection
             generalSection
-            obsidianSection
             windowSection
             historySection
         }
@@ -67,60 +66,6 @@ private extension GeneralSettingsView {
         } header: {
             SettingsSectionHeader(title: "Basic")
         }
-    }
-}
-
-// MARK: - Section 2: Obsidian
-
-private extension GeneralSettingsView {
-    var obsidianSection: some View {
-        Section {
-            Toggle(isOn: $viewModel.obsidianSearchEnabled) {
-                Text("Search Obsidian Vault")
-            }
-
-            LabeledContent {
-                HStack(spacing: 8) {
-                    TextField("Vault Path", text: $viewModel.obsidianVaultPath)
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(!viewModel.obsidianSearchEnabled)
-
-                    Button {
-                        chooseObsidianVault()
-                    } label: {
-                        Label("Choose", systemImage: "folder")
-                    }
-                    .disabled(!viewModel.obsidianSearchEnabled)
-                }
-            } label: {
-                Text("Vault")
-            }
-        } header: {
-            SettingsSectionHeader(title: "Obsidian")
-        } footer: {
-            SettingsSectionFooter {
-                Text("When enabled, Clipaste searches Markdown notes in this vault while the clipboard search field is active.")
-            }
-        }
-    }
-
-    func chooseObsidianVault() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = false
-        panel.prompt = String(localized: "Choose")
-
-        if !viewModel.obsidianVaultPath.isEmpty {
-            panel.directoryURL = URL(fileURLWithPath: viewModel.obsidianVaultPath)
-        }
-
-        guard panel.runModal() == .OK, let url = panel.url else {
-            return
-        }
-
-        viewModel.obsidianVaultPath = url.path
     }
 }
 

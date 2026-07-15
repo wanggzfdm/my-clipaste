@@ -279,12 +279,6 @@ extension ClipboardItem {
 }
 
 extension ClipboardItem {
-    static let obsidianSourceBundleIdentifier = "md.obsidian"
-
-    var isObsidianSearchResult: Bool {
-        sourceBundleIdentifier == Self.obsidianSourceBundleIdentifier
-    }
-
     /// 卡片角标等内容类型文案（与筛选标签共用同一套 String Catalog 键）。
     @MainActor
     func typeBadgeTitle() -> LocalizedStringResource {

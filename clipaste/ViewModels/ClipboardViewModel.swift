@@ -44,7 +44,6 @@ final class ClipboardViewModel: ObservableObject {
     @Published var displayedItemIDs: [UUID] = []
     /// Materialised view of `displayedItemIDs` for scroll/render hot paths.
     @Published var displayedItems: [ClipboardItem] = []
-    @Published var obsidianSearchItems: [ClipboardItem] = []
     @Published var searchInput: String = ""
     @Published var isSearchCompositionActive: Bool = false
     @Published var activeSearchQuery: String = ""

@@ -62,7 +62,7 @@ extension View {
     @ViewBuilder
     private func batchMenuContent(viewModel: ClipboardViewModel) -> some View {
         let selectedItems = viewModel.displayedItemsForInteraction.filter { viewModel.selectedItemIDs.contains($0.id) }
-        let selectedClipboardItems = selectedItems.filter { $0.isObsidianSearchResult == false }
+        let selectedClipboardItems = selectedItems
         let count = selectedItems.count
         let hasNonFavoriteItems = selectedClipboardItems.contains(where: { $0.isPinned == false })
         let hasFavoriteItems = selectedItems.contains(where: { $0.isPinned })
@@ -144,45 +144,7 @@ extension View {
 
     @ViewBuilder
     private func singleItemMenuContent(item: ClipboardItem, viewModel: ClipboardViewModel) -> some View {
-        if item.isObsidianSearchResult {
-            obsidianItemMenuContent(item: item, viewModel: viewModel)
-        } else {
-            clipboardItemMenuContent(item: item, viewModel: viewModel)
-        }
-    }
-
-    @ViewBuilder
-    private func obsidianItemMenuContent(item: ClipboardItem, viewModel: ClipboardViewModel) -> some View {
-        Button {
-            viewModel.handleSelection(id: item.id, isCommand: false, isShift: false)
-            viewModel.openInObsidian(item: item)
-        } label: {
-            Label("在 Obsidian 中打开", systemImage: "arrow.up.forward.app")
-        }
-
-        Divider()
-
-        Button {
-            viewModel.handleSelection(id: item.id, isCommand: false, isShift: false)
-            viewModel.copyToClipboard(item: item)
-        } label: {
-            Label("Copy", systemImage: "doc.on.doc")
-        }
-
-        Button {
-            viewModel.handleSelection(id: item.id, isCommand: false, isShift: false)
-            viewModel.pasteAsPlainText(item: item)
-        } label: {
-            Label("Paste as Plain Text", systemImage: "doc.plaintext")
-        }
-
-        Divider()
-
-        Button {
-            viewModel.showPreview(item: item)
-        } label: {
-            Label("Preview", systemImage: "eye")
-        }
+        clipboardItemMenuContent(item: item, viewModel: viewModel)
     }
 
     @ViewBuilder
