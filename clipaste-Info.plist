@@ -22,20 +22,6 @@
 	<string>public.app-category.utilities</string>
 	<key>NSHumanReadableCopyright</key>
 	<string></string>
-	<key>SUAllowsAutomaticUpdates</key>
-	<true/>
-	<key>SUAutomaticallyUpdate</key>
-	<false/>
-	<key>SUEnableAutomaticChecks</key>
-	<true/>
-	<key>SUEnableInstallerLauncherService</key>
-	<true/>
-	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/gangz1o/Clipaste/update-feed/appcast.xml</string>
-	<key>SUPublicEDKey</key>
-	<string>fiuWlXzWcw2RHcAJTm1Xzyv97TcA3tOlKm1au0zl2VQ=</string>
-	<key>SUScheduledCheckInterval</key>
-	<integer>86400</integer>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

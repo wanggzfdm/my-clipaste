@@ -47,14 +47,6 @@ enum SettingsPalette {
         }
     }
 
-    static func updateSurfaceBorder(for colorScheme: ColorScheme) -> Color {
-        switch colorScheme {
-        case .dark:
-            Color(.sRGB, red: 0.24, green: 0.30, blue: 0.36, opacity: 1.0)
-        default:
-            Color(.sRGB, red: 0.84, green: 0.89, blue: 0.93, opacity: 1.0)
-        }
-    }
 
     static func cardBackground(for colorScheme: ColorScheme) -> Color {
         switch colorScheme {

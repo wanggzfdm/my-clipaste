@@ -50,7 +50,6 @@ enum SettingsTab: String, CaseIterable, Identifiable, Hashable {
 struct SettingsView: View {
     @State private var selectedTab: SettingsTab = .general
     @State private var isSidebarVisible = true
-    @Environment(AppUpdateViewModel.self) private var appUpdateViewModel
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
@@ -71,8 +70,7 @@ struct SettingsView: View {
                                 SidebarLabel(
                                     tab: tab,
                                     isSelected: selectedTab == tab,
-                                    accentColor: appAccentColor,
-                                    showsUpdateBadge: tab == .about && appUpdateViewModel.shouldShowUpdateBadge
+                                    accentColor: appAccentColor
                                 )
                             }
                             .buttonStyle(.plain)
@@ -132,7 +130,6 @@ private struct SidebarLabel: View {
     let tab: SettingsTab
     let isSelected: Bool
     let accentColor: AppAccentColor
-    let showsUpdateBadge: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     private var selectedContentColor: Color {
@@ -154,21 +151,6 @@ private struct SidebarLabel: View {
                 .symbolRenderingMode(.monochrome)
                 .foregroundStyle(isSelected ? selectedContentColor : .secondary)
                 .frame(width: 16)
-                .overlay(alignment: .topTrailing) {
-                    if showsUpdateBadge {
-                        Circle()
-                            .fill(Color(nsColor: .systemRed))
-                            .frame(width: 6, height: 6)
-                            .overlay {
-                                Circle()
-                                    .stroke(
-                                        isSelected ? selectedFillColor : Color(nsColor: .controlBackgroundColor),
-                                        lineWidth: 1
-                                    )
-                            }
-                            .offset(x: 2, y: -1)
-                    }
-                }
         }
         .font(.system(size: 14, weight: .medium))
         .padding(.horizontal, 14)

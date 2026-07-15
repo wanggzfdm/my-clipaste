@@ -240,14 +240,7 @@ struct clipasteApp: App {
     @StateObject private var preferencesStore = AppPreferencesStore.shared
     @StateObject private var settingsViewModel = SettingsViewModel.shared
     private let runtimeStore = ClipboardRuntimeStore.shared
-    private let appUpdateViewModel = AppUpdateViewModel.shared
     @AppStorage("appLanguage") private var appLanguage: AppLanguage = .auto
-
-    init() {
-        Task { @MainActor in
-            AppUpdateViewModel.shared.start()
-        }
-    }
 
     var body: some Scene {
         // Register standard macOS Settings Window
@@ -258,7 +251,6 @@ struct clipasteApp: App {
                 .environment(runtimeStore)
                 .modelContainer(runtimeStore.container)
                 .environment(\.locale, appLanguage.resolvedLocale)
-                .environment(appUpdateViewModel)
         }
         .defaultSize(width: 900, height: 700)
         .windowResizability(.contentMinSize)
