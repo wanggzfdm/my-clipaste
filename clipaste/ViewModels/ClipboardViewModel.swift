@@ -42,6 +42,8 @@ final class ClipboardViewModel: ObservableObject {
 
     @Published var items: [ClipboardItem] = []
     @Published var displayedItemIDs: [UUID] = []
+    /// Materialised view of `displayedItemIDs` for scroll/render hot paths.
+    @Published var displayedItems: [ClipboardItem] = []
     @Published var obsidianSearchItems: [ClipboardItem] = []
     @Published var searchInput: String = ""
     @Published var isSearchCompositionActive: Bool = false
@@ -98,6 +100,8 @@ final class ClipboardViewModel: ObservableObject {
     var loadedHistoryCount = 0
     var hasLoadedFullHistory = false
     var historyLoadTask: Task<Void, Never>? = nil
+    /// Suppresses intermediate filter/UI churn while background pages merge.
+    var isBulkHistoryLoading = false
     var itemIndexByID: [UUID: Int] = [:]
     var itemIndexByHash: [String: Int] = [:]
     var pendingLinkMetadataHashes: Set<String> = []

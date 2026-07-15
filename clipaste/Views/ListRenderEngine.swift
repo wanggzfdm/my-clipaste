@@ -41,7 +41,8 @@ final class ListRenderEngine {
 
         let itemId = item.id
 
-        let task: Task<AttributedString?, Never> = Task.detached(priority: .userInitiated) {
+        // Utility priority: never fight scrolling / list layout on the main thread.
+        let task: Task<AttributedString?, Never> = Task.detached(priority: .utility) {
             guard let pasteRecord = await StorageManager.shared.loadPasteRecord(id: itemId) else {
                 return nil
             }

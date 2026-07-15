@@ -27,7 +27,8 @@ struct ClipboardHorizontalView: View {
                             .clipboardQuickPasteVisibleFrame(
                                 id: item.id,
                                 sourceIndex: index,
-                                coordinateSpaceName: quickPasteCoordinateSpaceName
+                                coordinateSpaceName: quickPasteCoordinateSpaceName,
+                                isTrackingEnabled: viewModel.isQuickPasteModifierHeld
                             )
                         }
                     }

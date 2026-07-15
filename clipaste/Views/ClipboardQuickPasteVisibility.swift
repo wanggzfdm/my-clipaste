@@ -107,23 +107,30 @@ enum ClipboardQuickPasteVisibleIndexResolver {
 }
 
 extension View {
+    /// Prefer disabling tracking while the Quick Paste modifier is not held —
+    /// PreferenceKey fan-out is a major scroll cost in Lazy stacks.
     func clipboardQuickPasteVisibleFrame(
         id: UUID,
         sourceIndex: Int,
-        coordinateSpaceName: String
+        coordinateSpaceName: String,
+        isTrackingEnabled: Bool = true
     ) -> some View {
         background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: ClipboardQuickPasteVisibleFramePreferenceKey.self,
-                    value: [
-                        ClipboardQuickPasteVisibleFrame(
-                            id: id,
-                            sourceIndex: sourceIndex,
-                            frame: proxy.frame(in: .named(coordinateSpaceName))
+            Group {
+                if isTrackingEnabled {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: ClipboardQuickPasteVisibleFramePreferenceKey.self,
+                            value: [
+                                ClipboardQuickPasteVisibleFrame(
+                                    id: id,
+                                    sourceIndex: sourceIndex,
+                                    frame: proxy.frame(in: .named(coordinateSpaceName))
+                                )
+                            ].filter { !$0.frame.isNull && !$0.frame.isEmpty }
                         )
-                    ].filter { !$0.frame.isNull && !$0.frame.isEmpty }
-                )
+                    }
+                }
             }
         }
     }

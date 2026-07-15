@@ -464,7 +464,8 @@ struct ClipboardCardView: View {
             return
         }
 
-        try? await Task.sleep(nanoseconds: 90_000_000)
+        // Longer settle window while user is flinging the list (Paste-style plain preview first).
+        try? await Task.sleep(nanoseconds: 180_000_000)
         guard !Task.isCancelled else {
             return
         }

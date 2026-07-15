@@ -40,6 +40,20 @@ extension ClipboardViewModel {
             .sink { [weak self] (query, quadruple, _) in
                 guard let self else { return }
                 let (allItems, groupId, filter, builtInGroup) = quadruple
+
+                // Background history pages already extend displayed IDs cheaply.
+                // Skip full refilter on every page merge to keep scrolling smooth
+                // (Paste-style: visible list stays stable while more data streams in).
+                let cleanQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                if self.isBulkHistoryLoading,
+                   cleanQuery.isEmpty,
+                   groupId == nil,
+                   filter == nil,
+                   builtInGroup == nil {
+                    self.activeSearchQuery = query
+                    return
+                }
+
                 self.activeSearchQuery = query
                 self.performAsyncFilter(
                     query: query,
@@ -66,7 +80,7 @@ extension ClipboardViewModel {
 
         if cleanQuery.isEmpty && groupId == nil && typeFilter == nil && builtInGroup == nil {
             obsidianSearchItems = []
-            self.displayedItemIDs = items.map(\.id)
+            self.publishDisplayedItemIDs(items.map(\.id))
             reconcileSelectionAfterDisplayedItemsChange()
             return
         }
@@ -94,7 +108,8 @@ extension ClipboardViewModel {
                 }
 
                 if !cleanQuery.isEmpty {
-                    let searchable = item.searchableText ?? item.rawText ?? item.textPreview
+                    // Prefer preview-sized fields on the hot path; rawText can be huge.
+                    let searchable = item.searchableText ?? item.textPreview
                     let matchesText = searchable.range(of: cleanQuery, options: [.caseInsensitive, .diacriticInsensitive]) != nil
                     let matchesApp = item.appName.range(of: cleanQuery, options: [.caseInsensitive]) != nil
 
@@ -114,7 +129,7 @@ extension ClipboardViewModel {
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.filterGeneration == thisGeneration else { return }
                 self.obsidianSearchItems = obsidianItems
-                self.displayedItemIDs = mergedIDs
+                self.publishDisplayedItemIDs(mergedIDs)
                 self.reconcileSelectionAfterDisplayedItemsChange()
             }
         }
@@ -124,6 +139,7 @@ extension ClipboardViewModel {
         dataLoadGeneration &+= 1
         let generation = dataLoadGeneration
         historyLoadTask?.cancel()
+        isBulkHistoryLoading = false
 
         if items.isEmpty {
             isInitialHistoryLoading = true
@@ -152,8 +168,14 @@ extension ClipboardViewModel {
                 return
             }
 
+            // Background pages: coalesce UI commits so scrolling is not interrupted
+            // by a full list rebuild every 160 rows (Paste-style streaming).
+            self.isBulkHistoryLoading = true
             var offset = firstPage.count
             var totalLoaded = firstPage.count
+            var pendingBackgroundItems: [ClipboardItem] = []
+            pendingBackgroundItems.reserveCapacity(Self.backgroundPageBatchSize * 2)
+            let coalesceTarget = Self.backgroundPageBatchSize * 2
 
             while !Task.isCancelled {
                 let page = await StorageManager.shared.fetchItemsPage(
@@ -162,22 +184,51 @@ extension ClipboardViewModel {
                     offset: offset
                 )
 
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled else {
+                    self.isBulkHistoryLoading = false
+                    return
+                }
 
                 if page.isEmpty {
+                    if !pendingBackgroundItems.isEmpty {
+                        self.appendHistoryPage(
+                            pendingBackgroundItems,
+                            generation: generation,
+                            loadedCount: totalLoaded
+                        )
+                        pendingBackgroundItems.removeAll(keepingCapacity: true)
+                    }
                     self.finishHistoryLoadingIfCurrent(generation: generation, loadedCount: totalLoaded)
                     return
                 }
 
                 totalLoaded += page.count
                 offset += page.count
-                self.appendHistoryPage(page, generation: generation, loadedCount: totalLoaded)
+                pendingBackgroundItems.append(contentsOf: page)
+
+                let shouldFlush =
+                    pendingBackgroundItems.count >= coalesceTarget
+                    || page.count < Self.backgroundPageBatchSize
+
+                if shouldFlush {
+                    self.appendHistoryPage(
+                        pendingBackgroundItems,
+                        generation: generation,
+                        loadedCount: totalLoaded
+                    )
+                    pendingBackgroundItems.removeAll(keepingCapacity: true)
+
+                    // Yield a frame so Lazy* stacks can keep scrolling fluid.
+                    try? await Task.sleep(nanoseconds: 8_000_000)
+                }
 
                 if page.count < Self.backgroundPageBatchSize {
                     self.finishHistoryLoadingIfCurrent(generation: generation, loadedCount: totalLoaded)
                     return
                 }
             }
+
+            self.isBulkHistoryLoading = false
         }
     }
 
@@ -224,8 +275,28 @@ extension ClipboardViewModel {
     func appendHistoryPage(_ pageItems: [ClipboardItem], generation: UInt, loadedCount: Int) {
         guard generation == dataLoadGeneration else { return }
 
-        mergeItems(pageItems, prepend: false)
-        refreshDisplayedItemsFromCurrentScope()
+        // Skip link-metadata thrash during bulk stream; first visible page already enqueued.
+        mergeItems(pageItems, prepend: false, enqueueLinkMetadata: false)
+
+        let hasActiveScope =
+            activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            || selectedGroupId != nil
+            || currentFilter != nil
+            || selectedBuiltInGroup != nil
+
+        if hasActiveScope {
+            refreshDisplayedItemsFromCurrentScope()
+        } else {
+            // Unfiltered history: append IDs only — no O(n) re-scope of the whole list.
+            var nextIDs = displayedItemIDs
+            nextIDs.reserveCapacity(nextIDs.count + pageItems.count)
+            let existing = Set(nextIDs)
+            for item in pageItems where existing.contains(item.id) == false {
+                nextIDs.append(item.id)
+            }
+            publishDisplayedItemIDs(nextIDs)
+        }
+
         isInitialHistoryLoading = false
         isLoadingMoreHistory = true
         loadedHistoryCount = loadedCount
@@ -234,10 +305,21 @@ extension ClipboardViewModel {
     @MainActor
     func finishHistoryLoadingIfCurrent(generation: UInt, loadedCount: Int) {
         guard generation == dataLoadGeneration else { return }
+        isBulkHistoryLoading = false
         isInitialHistoryLoading = false
         isLoadingMoreHistory = false
         loadedHistoryCount = loadedCount
         hasLoadedFullHistory = true
+
+        // One final scope sync in case filters changed mid-load.
+        if activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            || selectedGroupId != nil
+            || currentFilter != nil
+            || selectedBuiltInGroup != nil {
+            refreshDisplayedItemsFromCurrentScope()
+        } else {
+            rematerializeDisplayedItems()
+        }
     }
 }
 

@@ -2,16 +2,29 @@ import AppKit
 import SwiftUI
 
 extension ClipboardViewModel {
-    var displayedItems: [ClipboardItem] {
-        displayedItemIDs.compactMap(item(for:))
-    }
-
     func item(for id: UUID) -> ClipboardItem? {
         guard let index = itemIndexByID[id], items.indices.contains(index) else {
             return obsidianSearchItems.first { $0.id == id }
         }
 
         return items[index]
+    }
+
+    func publishDisplayedItemIDs(_ ids: [UUID]) {
+        displayedItemIDs = ids
+        rematerializeDisplayedItems()
+    }
+
+    func rematerializeDisplayedItems() {
+        let materialised = displayedItemIDs.compactMap { id -> ClipboardItem? in
+            if let index = itemIndexByID[id], items.indices.contains(index) {
+                return items[index]
+            }
+            return obsidianSearchItems.first { $0.id == id }
+        }
+        if materialised != displayedItems {
+            displayedItems = materialised
+        }
     }
 
     @discardableResult
@@ -25,28 +38,32 @@ extension ClipboardViewModel {
         return true
     }
 
-    func replaceItems(_ newItems: [ClipboardItem]) {
+    func replaceItems(_ newItems: [ClipboardItem], enqueueLinkMetadata: Bool = true) {
         items = newItems
         rebuildItemIndexes()
-        enqueueMissingLinkMetadata(for: newItems)
+        if enqueueLinkMetadata, isBulkHistoryLoading == false {
+            enqueueMissingLinkMetadata(for: newItems)
+        }
     }
 
-    func mergeItems(_ incomingItems: [ClipboardItem], prepend: Bool) {
+    func mergeItems(_ incomingItems: [ClipboardItem], prepend: Bool, enqueueLinkMetadata: Bool = true) {
         guard !incomingItems.isEmpty else { return }
 
         let combined = prepend ? (incomingItems + items) : (items + incomingItems)
         let deduplicated = deduplicatedItemsPreservingOrder(combined)
         items = deduplicated
         rebuildItemIndexes()
-        enqueueMissingLinkMetadata(for: incomingItems)
+        if enqueueLinkMetadata, isBulkHistoryLoading == false {
+            enqueueMissingLinkMetadata(for: incomingItems)
+        }
     }
 
     func removeItems(withIDs ids: Set<UUID>) {
         guard !ids.isEmpty else { return }
 
         items.removeAll { ids.contains($0.id) }
-        refreshDisplayedItemsFromCurrentScope()
         rebuildItemIndexes()
+        refreshDisplayedItemsFromCurrentScope()
     }
 
     func removeItem(withHash contentHash: String) {
@@ -55,8 +72,8 @@ extension ClipboardViewModel {
         }
 
         items.remove(at: index)
-        refreshDisplayedItemsFromCurrentScope()
         rebuildItemIndexes()
+        refreshDisplayedItemsFromCurrentScope()
     }
 
     func moveItem(withID id: UUID, to destinationIndex: Int) {
@@ -69,8 +86,8 @@ extension ClipboardViewModel {
 
         let movedItem = items.remove(at: sourceIndex)
         items.insert(movedItem, at: boundedDestination)
-        refreshDisplayedItemsFromCurrentScope()
         rebuildItemIndexes()
+        refreshDisplayedItemsFromCurrentScope()
     }
 
     func upsertItem(_ item: ClipboardItem, shouldResort: Bool) {
@@ -84,8 +101,8 @@ extension ClipboardViewModel {
             sortItemsByPresentationOrder()
         }
 
-        refreshDisplayedItemsFromCurrentScope()
         rebuildItemIndexes()
+        refreshDisplayedItemsFromCurrentScope()
         enqueueMissingLinkMetadata(for: [item])
     }
 }
@@ -94,13 +111,14 @@ extension ClipboardViewModel {
     func refreshDisplayedItemsFromCurrentScope() {
         let query = activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        displayedItemIDs = items.compactMap { item in
+        let ids = items.compactMap { item -> UUID? in
             guard matchesCurrentDisplayScope(item, query: query) else {
                 return nil
             }
 
             return item.id
         }
+        publishDisplayedItemIDs(ids)
     }
 }
 
@@ -143,7 +161,7 @@ private extension ClipboardViewModel {
             return true
         }
 
-        let searchable = item.searchableText ?? item.rawText ?? item.textPreview
+        let searchable = item.searchableText ?? item.textPreview
         if searchable.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil {
             return true
         }
