@@ -47,6 +47,8 @@ final class ClipboardViewModel: ObservableObject {
     @Published var searchInput: String = ""
     @Published var isSearchCompositionActive: Bool = false
     @Published var activeSearchQuery: String = ""
+    @Published var searchResultScrollGeneration: UInt = 0
+    @Published var searchResultScrollTargetID: UUID? = nil
     @Published var currentFilter: ClipboardContentType? = nil
     @Published var selectedBuiltInGroup: ClipboardBuiltInGroup? = nil
     @Published var selectedItemIDs: Set<UUID> = []
@@ -80,6 +82,8 @@ final class ClipboardViewModel: ObservableObject {
     // Shared implementation state for the split partial ViewModel files.
     var cancellables: Set<AnyCancellable> = []
     var filterGeneration: UInt = 0
+    var handledSearchResultScrollGeneration: UInt = 0
+    var lastSearchResultScrollQuery: String = ""
     var listScrollGeneration: UInt = 0
     var quickLookLoadTask: Task<Void, Never>? = nil
     var quickLookLoadGeneration: UInt = 0

@@ -81,6 +81,7 @@ extension ClipboardViewModel {
         if cleanQuery.isEmpty && groupId == nil && typeFilter == nil && builtInGroup == nil {
             self.publishDisplayedItemIDs(items.map(\.id))
             reconcileSelectionAfterDisplayedItemsChange()
+            publishSearchScrollResetIfNeeded(query: cleanQuery)
             return
         }
 
@@ -116,8 +117,17 @@ extension ClipboardViewModel {
                 guard let self, self.filterGeneration == thisGeneration else { return }
                 self.publishDisplayedItemIDs(filteredIDs)
                 self.reconcileSelectionAfterDisplayedItemsChange()
+                self.publishSearchScrollResetIfNeeded(query: cleanQuery)
             }
         }
+    }
+
+    private func publishSearchScrollResetIfNeeded(query: String) {
+        guard query != lastSearchResultScrollQuery else { return }
+
+        lastSearchResultScrollQuery = query
+        searchResultScrollTargetID = displayedItems.first?.id
+        searchResultScrollGeneration &+= 1
     }
 
     func loadData(mode: DataLoadMode = .fullRefresh) {

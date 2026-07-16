@@ -69,7 +69,12 @@ struct ClipboardHorizontalView: View {
                     viewModel.batchDelete()
                 }
                 .onAppear {
-                    scrollToPrimarySelection(with: proxy, animated: false)
+                    if !scrollToFirstSearchResultIfNeeded(with: proxy) {
+                        scrollToPrimarySelection(with: proxy, animated: false)
+                    }
+                }
+                .onChange(of: viewModel.searchResultScrollGeneration) { _, _ in
+                    scrollToFirstSearchResultIfNeeded(with: proxy)
                 }
                 .onChange(of: viewModel.listScrollRequest) { _, request in
                     guard let request else { return }
@@ -126,6 +131,27 @@ struct ClipboardHorizontalView: View {
     private func scrollToPrimarySelection(with proxy: ScrollViewProxy, animated: Bool) {
         guard let selectedID = viewModel.lastSelectedID ?? viewModel.selectedItemIDs.first else { return }
         scrollToItem(with: proxy, itemID: selectedID, animated: animated)
+    }
+
+    @discardableResult
+    private func scrollToFirstSearchResultIfNeeded(with proxy: ScrollViewProxy) -> Bool {
+        guard let firstItemID = items.first?.id,
+              firstItemID == viewModel.searchResultScrollTargetID,
+              viewModel.handledSearchResultScrollGeneration != viewModel.searchResultScrollGeneration else {
+            return false
+        }
+
+        viewModel.handledSearchResultScrollGeneration = viewModel.searchResultScrollGeneration
+
+        DispatchQueue.main.async {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                proxy.scrollTo(firstItemID, anchor: .leading)
+            }
+        }
+
+        return true
     }
 
     private func scrollToItem(with proxy: ScrollViewProxy, itemID: UUID, animated: Bool) {
