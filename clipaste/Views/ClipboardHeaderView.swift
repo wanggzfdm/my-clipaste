@@ -8,6 +8,8 @@ struct ClipboardHeaderView: View {
         static let expandedWidth: CGFloat = 240
         static let horizontalPadding: CGFloat = 12
         static let contentSpacing: CGFloat = 8
+        /// Search chrome ↔ favorites/group bar spacing (collapsed and expanded share this value).
+        static let groupBarSpacing: CGFloat = 6
     }
 
     @ObservedObject var viewModel: ClipboardViewModel
@@ -33,8 +35,8 @@ struct ClipboardHeaderView: View {
     @State private var isAIModelSubmenuHovered = false
     @State private var aiSettingsViewModel = AISettingsViewModel.shared
     /// Local chrome expand state — kept separate from `@FocusState` so layout
-    /// animation does not run inside the focus transaction (and does not reflow
-    /// the sibling group bar / FreeScrollWheelView).
+    /// animation does not run inside the focus transaction. Group-bar AppKit
+    /// content still disables animation interpolation via `.transaction`.
     @State private var isSearchChromeExpanded = false
 
     // MARK: - 重命名 / 删除分组弹窗控制
@@ -147,12 +149,12 @@ struct ClipboardHeaderView: View {
 
             Spacer(minLength: 20)
 
-            HStack(spacing: 6) {
+            HStack(spacing: HorizontalSearchLayout.groupBarSpacing) {
                 horizontalSearchBar
 
                 horizontalHybridGroupBar
                     .layoutPriority(1)
-                    // Search expand must not interpolate sibling AppKit-hosted group tabs.
+                    // Search width animates; do not interpolate AppKit-hosted tab frames.
                     .transaction { $0.disablesAnimations = true }
             }
 
@@ -207,8 +209,8 @@ struct ClipboardHeaderView: View {
             || hasActiveSearchChromeContent
     }
 
-    /// Visual chrome width only. Layout slot stays fixed at `expandedWidth`
-    /// so the sibling group bar never reflows during expand/collapse.
+    /// Layout and visual width share one value so collapse leaves no empty slot
+    /// between the search chrome and the favorites/group bar.
     private var horizontalSearchChromeWidth: CGFloat {
         isHorizontalSearchExpanded
             ? HorizontalSearchLayout.expandedWidth
@@ -237,6 +239,7 @@ struct ClipboardHeaderView: View {
             }
             .padding(.leading, 4)
             .padding(.trailing, HorizontalSearchLayout.horizontalPadding)
+            // Text area stays at expanded width; outer frame + clip reveal it.
             .frame(
                 width: HorizontalSearchLayout.expandedWidth - HorizontalSearchLayout.fieldHeight,
                 alignment: .leading
@@ -255,12 +258,6 @@ struct ClipboardHeaderView: View {
         .contentShape(Capsule())
         .shadow(color: searchFieldShadowColor, radius: 4, y: 2)
         .animation(searchExpandAnimation, value: isHorizontalSearchExpanded)
-        // Fixed layout slot: sibling FreeScrollWheelView never reflows.
-        .frame(
-            width: HorizontalSearchLayout.expandedWidth,
-            height: HorizontalSearchLayout.fieldHeight,
-            alignment: .leading
-        )
         .compositingGroup()
         .contentShape(Rectangle())
         .onTapGesture {
