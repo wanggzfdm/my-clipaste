@@ -32,6 +32,10 @@ struct ClipboardHeaderView: View {
     @State private var isShowingAIModelPopover = false
     @State private var isAIModelSubmenuHovered = false
     @State private var aiSettingsViewModel = AISettingsViewModel.shared
+    /// Local chrome expand state — kept separate from `@FocusState` so layout
+    /// animation does not run inside the focus transaction (and does not reflow
+    /// the sibling group bar / FreeScrollWheelView).
+    @State private var isSearchChromeExpanded = false
 
     // MARK: - 重命名 / 删除分组弹窗控制
     @State private var groupToEdit: ClipboardGroupItem? = nil
@@ -148,6 +152,8 @@ struct ClipboardHeaderView: View {
 
                 horizontalHybridGroupBar
                     .layoutPriority(1)
+                    // Search expand must not interpolate sibling AppKit-hosted group tabs.
+                    .transaction { $0.disablesAnimations = true }
             }
 
             Spacer(minLength: 20)
@@ -190,23 +196,28 @@ struct ClipboardHeaderView: View {
         .frame(width: 28, alignment: .leading)
     }
 
-    private var isHorizontalSearchExpanded: Bool {
-        focusedField == .searchBar ||
-            (viewModel.isSearchCompositionActive && !viewModel.searchInput.isEmpty) ||
-            !viewModel.searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private var hasActiveSearchChromeContent: Bool {
+        viewModel.isSearchCompositionActive
+            || !viewModel.searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var horizontalSearchBarWidth: CGFloat {
+    private var isHorizontalSearchExpanded: Bool {
+        isSearchChromeExpanded
+            || focusedField == .searchBar
+            || hasActiveSearchChromeContent
+    }
+
+    /// Visual chrome width only. Layout slot stays fixed at `expandedWidth`
+    /// so the sibling group bar never reflows during expand/collapse.
+    private var horizontalSearchChromeWidth: CGFloat {
         isHorizontalSearchExpanded
             ? HorizontalSearchLayout.expandedWidth
             : HorizontalSearchLayout.collapsedWidth
     }
 
-
-    private var horizontalSearchWidthAnimation: Animation {
-        .linear(duration: 0.01)
+    private var searchExpandAnimation: Animation {
+        .easeOut(duration: 0.18)
     }
-
 
     private var horizontalSearchBar: some View {
         HStack(spacing: 0) {
@@ -224,15 +235,17 @@ struct ClipboardHeaderView: View {
                 horizontalSearchTextField
                 horizontalSearchClearButton
             }
-            .padding(.leading, isHorizontalSearchExpanded ? 4 : 0)
-            .padding(.trailing, isHorizontalSearchExpanded ? HorizontalSearchLayout.horizontalPadding : 0)
-            .frame(width: HorizontalSearchLayout.expandedWidth - HorizontalSearchLayout.fieldHeight, alignment: .leading)
+            .padding(.leading, 4)
+            .padding(.trailing, HorizontalSearchLayout.horizontalPadding)
+            .frame(
+                width: HorizontalSearchLayout.expandedWidth - HorizontalSearchLayout.fieldHeight,
+                alignment: .leading
+            )
             .opacity(isHorizontalSearchExpanded ? 1 : 0)
             .allowsHitTesting(isHorizontalSearchExpanded)
         }
         .frame(height: HorizontalSearchLayout.fieldHeight)
-        .frame(width: horizontalSearchBarWidth, alignment: .leading)
-        .animation(.easeOut(duration: 0.15), value: isHorizontalSearchExpanded)
+        .frame(width: horizontalSearchChromeWidth, alignment: .leading)
         .background(Color.clear.background(.regularMaterial))
         .overlay {
             Capsule()
@@ -240,12 +253,24 @@ struct ClipboardHeaderView: View {
         }
         .clipShape(Capsule())
         .contentShape(Capsule())
+        .shadow(color: searchFieldShadowColor, radius: 4, y: 2)
+        .animation(searchExpandAnimation, value: isHorizontalSearchExpanded)
+        // Fixed layout slot: sibling FreeScrollWheelView never reflows.
+        .frame(
+            width: HorizontalSearchLayout.expandedWidth,
+            height: HorizontalSearchLayout.fieldHeight,
+            alignment: .leading
+        )
+        .compositingGroup()
+        .contentShape(Rectangle())
         .onTapGesture {
             if !isHorizontalSearchExpanded {
                 activateHorizontalSearch()
             }
         }
-        .shadow(color: searchFieldShadowColor, radius: isHorizontalSearchExpanded ? 8 : 4, y: 2)
+        .onChange(of: focusedField) { _, newValue in
+            syncSearchChromeWithFocus(newValue)
+        }
         .help(isHorizontalSearchExpanded ? Text("搜索历史") : Text("搜索"))
     }
 
@@ -270,18 +295,47 @@ struct ClipboardHeaderView: View {
     @ViewBuilder
     private var horizontalSearchClearButton: some View {
         if !viewModel.searchInput.isEmpty {
-            Button(action: { viewModel.searchInput = "" }) {
+            Button(action: clearHorizontalSearchInput) {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .transition(.move(edge: .trailing).combined(with: .opacity))
         }
     }
 
     private func activateHorizontalSearch() {
-        withAnimation(horizontalSearchWidthAnimation) {
+        withAnimation(searchExpandAnimation) {
+            isSearchChromeExpanded = true
+        }
+        // Focus is applied after the layout animation starts so `@FocusState`
+        // does not pull the entire header/list into the same transaction.
+        DispatchQueue.main.async {
             focusedField = .searchBar
+        }
+    }
+
+    private func clearHorizontalSearchInput() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            viewModel.searchInput = ""
+        }
+    }
+
+    private func syncSearchChromeWithFocus(_ newValue: ClipboardPanelFocusField?) {
+        if newValue == .searchBar {
+            if isSearchChromeExpanded == false {
+                withAnimation(searchExpandAnimation) {
+                    isSearchChromeExpanded = true
+                }
+            }
+            return
+        }
+
+        guard hasActiveSearchChromeContent == false else { return }
+        guard isSearchChromeExpanded else { return }
+        withAnimation(searchExpandAnimation) {
+            isSearchChromeExpanded = false
         }
     }
 
@@ -958,7 +1012,7 @@ struct ClipboardHeaderView: View {
     }
 
     private var searchFieldShadowColor: Color {
-        focusedField == .searchBar
+        isHorizontalSearchExpanded
             ? appAccentColor.color.opacity(0.16)
             : .black.opacity(0.05)
     }
