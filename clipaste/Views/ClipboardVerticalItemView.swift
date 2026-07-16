@@ -23,6 +23,7 @@ struct ClipboardVerticalItemView: View {
     @AppStorage("appAccentColor") private var appAccentColor: AppAccentColor = .defaultValue
 
     @State private var isHovering = false
+    @State private var isMenuTracking = false
     @State private var richPreviewText: AttributedString?
 
     private var isCompact: Bool {
@@ -142,7 +143,7 @@ struct ClipboardVerticalItemView: View {
             .background { quickPasteShortcutBackground }
             .shareable(item: item, viewModel: viewModel)
             .clipboardContextMenu(for: item, viewModel: viewModel)
-            .onHover { hovering in
+            .freezingHoverWhileMenuTracking(isMenuTracking: $isMenuTracking) { hovering in
                 var transaction = Transaction()
                 transaction.disablesAnimations = viewModel.isSearchFilteringActive
                 withTransaction(transaction) {
@@ -340,7 +341,16 @@ struct ClipboardVerticalItemView: View {
             )
             .transition(.opacity)
         } else if showsAIShortcut {
-            ClipboardAIActionMenu(item: item, viewModel: viewModel) {
+            let aiSnapshot = AIMenuSnapshot.make(item: item, settings: viewModel.aiSettingsViewModel)
+            ClipboardAIActionMenu(
+                snapshot: aiSnapshot,
+                onRunSkill: { skill in
+                    viewModel.runAISkill(skill, for: item)
+                },
+                onOpenSettings: {
+                    NotificationCenter.default.post(name: .openSettingsIntent, object: nil)
+                }
+            ) {
                 HStack(spacing: -4) {
                     Image(systemName: "sparkles")
                         .font(.system(size: 7, weight: .medium))

@@ -10,6 +10,7 @@ struct ClipboardCardView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @State private var isHovered = false
+    @State private var isMenuTracking = false
     @State private var richPreviewText: AttributedString?
     @AppStorage("appAccentColor") private var appAccentColor: AppAccentColor = .defaultValue
 
@@ -209,7 +210,7 @@ struct ClipboardCardView: View {
             await refreshRichPreviewText()
         }
         .clipboardContextMenu(for: item, viewModel: viewModel)
-        .onHover { hovering in
+        .freezingHoverWhileMenuTracking(isMenuTracking: $isMenuTracking) { hovering in
             if shouldDisableAnimations {
                 isHovered = hovering
             } else {
@@ -217,7 +218,6 @@ struct ClipboardCardView: View {
                     isHovered = hovering
                 }
             }
-
         }
         .onDrag {
             viewModel.draggedItemId = item.id
@@ -304,7 +304,16 @@ struct ClipboardCardView: View {
             .padding(.bottom, 12)
             .transition(.opacity)
         } else if showsAIShortcut {
-            ClipboardAIActionMenu(item: item, viewModel: viewModel) {
+            let aiSnapshot = AIMenuSnapshot.make(item: item, settings: viewModel.aiSettingsViewModel)
+            ClipboardAIActionMenu(
+                snapshot: aiSnapshot,
+                onRunSkill: { skill in
+                    viewModel.runAISkill(skill, for: item)
+                },
+                onOpenSettings: {
+                    NotificationCenter.default.post(name: .openSettingsIntent, object: nil)
+                }
+            ) {
                 HStack(spacing: -4) {
                     Image(systemName: "sparkles")
                         .font(.system(size: 9, weight: .medium))

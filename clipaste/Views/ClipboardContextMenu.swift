@@ -185,8 +185,17 @@ extension View {
 
         Divider()
 
-        if viewModel.aiSettingsViewModel.isAIEnabled {
-            ClipboardAIActionMenu(item: item, viewModel: viewModel) {
+        let aiSnapshot = AIMenuSnapshot.make(item: item, settings: viewModel.aiSettingsViewModel)
+        if aiSnapshot.isEnabled {
+            ClipboardAIActionMenu(
+                snapshot: aiSnapshot,
+                onRunSkill: { skill in
+                    viewModel.runAISkill(skill, for: item)
+                },
+                onOpenSettings: {
+                    NotificationCenter.default.post(name: .openSettingsIntent, object: nil)
+                }
+            ) {
                 Label("AI", systemImage: "sparkles")
             }
 
