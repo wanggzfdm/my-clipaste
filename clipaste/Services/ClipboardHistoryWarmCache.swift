@@ -19,6 +19,25 @@ final class ClipboardHistoryWarmCache: @unchecked Sendable {
         self.items = items
     }
 
+    /// Insert or replace a single item at the front of the warm cache (by content hash).
+    /// Hot-path safe: no await, lock only.
+    func prependOrUpdate(_ item: ClipboardItem, routeKey: String) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if self.routeKey != routeKey {
+            self.routeKey = routeKey
+            self.items = [item]
+            return
+        }
+
+        items.removeAll { $0.contentHash == item.contentHash || $0.id == item.id }
+        items.insert(item, at: 0)
+        if items.count > Self.defaultLimit {
+            items = Array(items.prefix(Self.defaultLimit))
+        }
+    }
+
     func snapshot(for routeKey: String) -> [ClipboardItem]? {
         lock.lock()
         defer { lock.unlock() }

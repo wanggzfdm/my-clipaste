@@ -105,6 +105,57 @@ extension ClipboardViewModel {
         refreshDisplayedItemsFromCurrentScope()
         enqueueMissingLinkMetadata(for: [item])
     }
+
+    /// Memory-first capture: push a lightweight item into the list before DB persistence completes.
+    func applyOptimisticCapture(_ item: ClipboardItem, silent: Bool, selectIfSilentOpen: Bool = false) {
+        let apply = {
+            self.upsertItem(item, shouldResort: true)
+            if selectIfSilentOpen {
+                self.selectFirstDisplayedItem(animatedScroll: false)
+            }
+        }
+
+        if silent || isSilentPresentationMutation {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction, apply)
+        } else {
+            apply()
+        }
+    }
+
+    func beginSilentPresentationMutations() {
+        silentPresentationEndTask?.cancel()
+        silentPresentationEndTask = nil
+        isSilentPresentationMutation = true
+    }
+
+    func endSilentPresentationMutations(after delay: Duration = .milliseconds(120)) {
+        silentPresentationEndTask?.cancel()
+        silentPresentationEndTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: delay)
+            guard let self, Task.isCancelled == false else { return }
+            self.isSilentPresentationMutation = false
+            self.silentPresentationEndTask = nil
+        }
+    }
+
+    func performSilentListMutation(_ body: () -> Void) {
+        if isSilentPresentationMutation {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction, body)
+        } else {
+            body()
+        }
+    }
+
+    /// Resort after merges that may demote in-memory optimistic items.
+    func resortItemsForPresentation() {
+        sortItemsByPresentationOrder()
+        rebuildItemIndexes()
+        refreshDisplayedItemsFromCurrentScope()
+    }
 }
 
 extension ClipboardViewModel {

@@ -16,6 +16,9 @@ class ClipboardPanelManager {
     private var forceHideObserver: Any?
     private let panelViewModel = ClipboardViewModel()
 
+    /// Entry point for memory-first clipboard capture (Monitor → panel list).
+    var optimisticCaptureViewModel: ClipboardViewModel { panelViewModel }
+
     /// Additional width to add when preview panel is active
     private let previewExpandedWidth: CGFloat = 380
 
@@ -284,22 +287,64 @@ class ClipboardPanelManager {
     }
 
     /// Shows the panel sized for the current layout mode, then animates it in.
-    /// Hot path: prime in-memory content and order front immediately; pasteboard capture
-    /// and history reconcile run in parallel after the panel is visible.
+    /// Hot path: prime memory, optimistically capture a dirty pasteboard (budgeted),
+    /// then order front so the first frame already includes the latest item.
     func showPanel() {
         guard !isVisible, !isPreparingToShow else { return }
 
         isPreparingToShow = true
         panelViewModel.primePanelContentForImmediatePresentation()
-        guard isPreparingToShow else { return }
-        isPreparingToShow = false
-        presentPreparedPanel()
+        panelViewModel.beginSilentPresentationMutations()
+
+        // Clean pasteboard: order front immediately (no extra run-loop hop).
+        // Dirty pasteboard: budgeted memory-first capture before present.
+        if ClipboardMonitor.shared.isPasteboardDirty == false {
+            guard isPreparingToShow else {
+                panelViewModel.endSilentPresentationMutations(after: .milliseconds(0))
+                return
+            }
+            isPreparingToShow = false
+            presentPreparedPanel()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                await self.panelViewModel.refreshHistoryAfterPresentationIfNeeded()
+                self.panelViewModel.endSilentPresentationMutations(after: .milliseconds(120))
+            }
+            return
+        }
 
         Task { @MainActor [weak self] in
             guard let self else { return }
-            async let capture: Void = ClipboardMonitor.shared.captureCurrentPasteboardIfNeeded()
-            async let refresh: Void = self.panelViewModel.refreshHistoryAfterPresentationIfNeeded()
-            _ = await (capture, refresh)
+
+            // Capture runs in an unstructured Task so a timeout only unblocks present —
+            // it never cancels the capture itself.
+            let captureTask = Task { @MainActor in
+                await ClipboardMonitor.shared.captureAndPublishOptimisticIfNeeded(
+                    into: self.panelViewModel,
+                    silent: true
+                )
+            }
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    _ = await captureTask.result
+                }
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: 40_000_000)
+                }
+                _ = await group.next()
+                group.cancelAll()
+            }
+
+            guard self.isPreparingToShow else {
+                self.panelViewModel.endSilentPresentationMutations(after: .milliseconds(0))
+                return
+            }
+            self.isPreparingToShow = false
+            self.presentPreparedPanel()
+
+            await self.panelViewModel.refreshHistoryAfterPresentationIfNeeded()
+            // Residual DB reconcile / late capture should still avoid insert animation.
+            self.panelViewModel.endSilentPresentationMutations(after: .milliseconds(120))
         }
     }
 

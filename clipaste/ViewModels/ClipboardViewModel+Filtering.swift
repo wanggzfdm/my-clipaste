@@ -243,8 +243,17 @@ extension ClipboardViewModel {
         guard generation == dataLoadGeneration else { return }
 
         if mode == .visibleFirst, items.isEmpty == false {
+            let preexisting = items
             mergeItems(pageItems, prepend: true)
-            refreshDisplayedItemsFromCurrentScope()
+
+            // Optimistic memory captures may land before DB upsert finishes. mergeItems
+            // (prepend: true) keeps the DB page first and would demote those fresher
+            // in-memory heads — re-surface any item newer than the page head.
+            let pageNewestTimestamp = pageItems.map(\.timestamp).max() ?? .distantPast
+            for candidate in preexisting where candidate.timestamp > pageNewestTimestamp {
+                upsertItem(candidate, shouldResort: true)
+            }
+            resortItemsForPresentation()
             reconcileSelectionAfterDisplayedItemsChange()
         } else {
             applyLoadedItems(pageItems)

@@ -165,10 +165,19 @@ extension ClipboardViewModel {
         guard let cachedItems = ClipboardHistoryWarmCache.shared.snapshot(for: routeKey) else {
             return
         }
-        guard items.isEmpty || hasPreparedPanelData == false else { return }
 
-        applyLoadedItems(cachedItems)
-        loadedHistoryCount = cachedItems.count
-        hasLoadedFullHistory = cachedItems.count < ClipboardHistoryWarmCache.defaultLimit
+        if items.isEmpty || hasPreparedPanelData == false {
+            applyLoadedItems(cachedItems)
+            loadedHistoryCount = cachedItems.count
+            hasLoadedFullHistory = cachedItems.count < ClipboardHistoryWarmCache.defaultLimit
+            return
+        }
+
+        // Keep an already-loaded list, but merge a fresher warm-cache head
+        // (optimistic capture while the panel was idle / not yet prepared).
+        guard let cachedFirst = cachedItems.first else { return }
+        if items.first?.contentHash != cachedFirst.contentHash {
+            applyOptimisticCapture(cachedFirst, silent: true)
+        }
     }
 }

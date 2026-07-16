@@ -46,18 +46,67 @@ final class ClipboardMonitor {
         cancelMonitoringLoop()
     }
 
+    var isPasteboardDirty: Bool {
+        pasteboard.changeCount != lastChangeCount
+    }
+
     func captureCurrentPasteboardIfNeeded() async {
+        _ = await captureAndPublishOptimisticIfNeeded(into: nil, silent: false)
+    }
+
+    /// Memory-first capture: publish lightweight `ClipboardItem`s to the panel VM / warm cache,
+    /// then persist asynchronously. Returns whether any optimistic items were published.
+    @discardableResult
+    func captureAndPublishOptimisticIfNeeded(
+        into viewModel: ClipboardViewModel?,
+        silent: Bool
+    ) async -> Bool {
         let changeCount = pasteboard.changeCount
-        guard changeCount != lastChangeCount else { return }
+        guard changeCount != lastChangeCount else { return false }
 
         if isIgnoredNextChange {
             isIgnoredNextChange = false
             lastChangeCount = changeCount
-            return
+            return false
         }
 
         lastChangeCount = changeCount
-        await persistCurrentPasteboardItems()
+        guard let capture = capturedPasteboardPayloads() else { return false }
+
+        let optimisticItems = makeOptimisticItems(from: capture)
+        guard optimisticItems.isEmpty == false else {
+            // Still persist if payloads exist but optimistic mapping failed (should be rare).
+            Task.detached(priority: .utility) {
+                await Self.persistCapturedPayloads(
+                    recordPayloads: capture.recordPayloads,
+                    imagePayloads: capture.imagePayloads,
+                    sourceAppIconData: capture.sourceAppIconData
+                )
+            }
+            return false
+        }
+
+        let routeKey = ClipboardRuntimeStore.shared.rootIdentity
+        let targetViewModel = viewModel ?? ClipboardPanelManager.shared.optimisticCaptureViewModel
+
+        for item in optimisticItems {
+            ClipboardHistoryWarmCache.shared.prependOrUpdate(item, routeKey: routeKey)
+            targetViewModel.applyOptimisticCapture(
+                item,
+                silent: silent,
+                selectIfSilentOpen: silent && targetViewModel.isPanelPresentationActive == false
+            )
+        }
+
+        Task.detached(priority: .utility) {
+            await Self.persistCapturedPayloads(
+                recordPayloads: capture.recordPayloads,
+                imagePayloads: capture.imagePayloads,
+                sourceAppIconData: capture.sourceAppIconData
+            )
+        }
+
+        return true
     }
 
     private func observePreferences() {
@@ -150,7 +199,22 @@ final class ClipboardMonitor {
     }
 
     private func processPasteboardItems() {
+        // lastChangeCount already advanced in pollPasteboardIfNeeded.
+        // Re-read payloads and publish memory-first without awaiting DB.
         guard let capture = capturedPasteboardPayloads() else { return }
+
+        let optimisticItems = makeOptimisticItems(from: capture)
+        if optimisticItems.isEmpty == false {
+            let routeKey = ClipboardRuntimeStore.shared.rootIdentity
+            let targetViewModel = ClipboardPanelManager.shared.optimisticCaptureViewModel
+            let silent = targetViewModel.isSilentPresentationMutation
+                || targetViewModel.isPanelPresentationActive == false
+
+            for item in optimisticItems {
+                ClipboardHistoryWarmCache.shared.prependOrUpdate(item, routeKey: routeKey)
+                targetViewModel.applyOptimisticCapture(item, silent: silent)
+            }
+        }
 
         Task.detached(priority: .utility) {
             await Self.persistCapturedPayloads(
@@ -159,16 +223,6 @@ final class ClipboardMonitor {
                 sourceAppIconData: capture.sourceAppIconData
             )
         }
-    }
-
-    private func persistCurrentPasteboardItems() async {
-        guard let capture = capturedPasteboardPayloads() else { return }
-
-        await Self.persistCapturedPayloads(
-            recordPayloads: capture.recordPayloads,
-            imagePayloads: capture.imagePayloads,
-            sourceAppIconData: capture.sourceAppIconData
-        )
     }
 
     private func capturedPasteboardPayloads() -> (
@@ -498,6 +552,101 @@ final class ClipboardMonitor {
         }
     }
 
+    private func makeOptimisticItems(
+        from capture: (
+            recordPayloads: [ClipboardRecordPayload],
+            imagePayloads: [ClipboardImagePayload],
+            sourceAppIconData: Data?
+        )
+    ) -> [ClipboardItem] {
+        var items: [ClipboardItem] = []
+        items.reserveCapacity(capture.recordPayloads.count + capture.imagePayloads.count)
+
+        let timestamp = Date()
+
+        for payload in capture.imagePayloads {
+            let contentHash = CryptoHelper.sha256(data: payload.data)
+            let metadata = ImageProcessor.metadata(for: payload.data)
+            items.append(
+                ClipboardItem(
+                    contentType: .image,
+                    contentHash: contentHash,
+                    textPreview: "Image",
+                    searchableText: nil,
+                    sourceBundleIdentifier: payload.appID,
+                    appName: payload.appName ?? "Unknown App",
+                    appIcon: nil,
+                    appIconDominantColorHex: nil,
+                    appIconName: ClipboardItem.appIconName(for: payload.appID),
+                    timestamp: timestamp,
+                    rawText: nil,
+                    hasImagePreview: false,
+                    hasImageData: true,
+                    imageUTType: metadata.utTypeIdentifier,
+                    imagePixelWidth: metadata.pixelWidth,
+                    imagePixelHeight: metadata.pixelHeight,
+                    sourcePlatformRawValue: payload.sourcePlatformRawValue,
+                    sourceDeviceName: payload.sourceDeviceName,
+                    captureMethodRawValue: payload.captureMethodRawValue,
+                    captureSessionID: payload.captureSessionID
+                )
+            )
+        }
+
+        for payload in capture.recordPayloads {
+            let type = ClipboardContentType(rawValue: payload.type) ?? .text
+            let plainText = payload.text
+            let textPreview: String
+            switch type {
+            case .fileURL:
+                if let plainText,
+                   let url = URL(string: plainText),
+                   url.isFileURL,
+                   !url.lastPathComponent.isEmpty {
+                    textPreview = url.lastPathComponent
+                } else {
+                    textPreview = plainText ?? "File"
+                }
+            case .image:
+                textPreview = "Image"
+            case .color:
+                textPreview = plainText ?? "Color"
+            case .text, .link, .code:
+                textPreview = plainText ?? ""
+            }
+
+            items.append(
+                ClipboardItem(
+                    contentType: type,
+                    contentHash: payload.hash,
+                    textPreview: textPreview,
+                    searchableText: ClipboardItem.searchableTextValue(
+                        plainText: plainText,
+                        customTitle: nil,
+                        linkTitle: nil
+                    ),
+                    sourceBundleIdentifier: payload.appID,
+                    appName: payload.appName ?? "Unknown App",
+                    appIcon: nil,
+                    appIconDominantColorHex: nil,
+                    appIconName: ClipboardItem.appIconName(for: payload.appID),
+                    timestamp: timestamp,
+                    rawText: (type == .text || type == .link || type == .code) ? plainText : nil,
+                    hasImagePreview: false,
+                    hasImageData: false,
+                    fileURL: type == .fileURL ? plainText : nil,
+                    hasRTF: payload.rtfData != nil || payload.richTextArchive != nil,
+                    sourcePlatformRawValue: payload.sourcePlatformRawValue,
+                    sourceDeviceName: payload.sourceDeviceName,
+                    captureMethodRawValue: payload.captureMethodRawValue,
+                    captureSessionID: payload.captureSessionID
+                )
+            )
+        }
+
+        return items
+    }
+
     private nonisolated static func extractDominantColorHex(from iconData: Data) -> String? {
         autoreleasepool {
             guard let image = NSImage(data: iconData) else {
@@ -516,7 +665,7 @@ private extension ClipboardMonitor {
     }
 
     enum DefaultValues {
-        static let monitorInterval: TimeInterval = 0.5
+        static let monitorInterval: TimeInterval = 0.2
     }
 }
 

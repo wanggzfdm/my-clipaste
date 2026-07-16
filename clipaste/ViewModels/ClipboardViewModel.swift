@@ -106,6 +106,9 @@ final class ClipboardViewModel: ObservableObject {
     var pendingLinkMetadataHashes: Set<String> = []
     var operationNoticeHideTask: Task<Void, Never>? = nil
     var suppressedPasteItemIDs: Set<UUID> = []
+    /// When true, passive list mutations (optimistic capture / DB reconcile) suppress SwiftUI animations.
+    var isSilentPresentationMutation = false
+    var silentPresentationEndTask: Task<Void, Never>? = nil
     let settingsViewModel: SettingsViewModel
     let aiSettingsViewModel: AISettingsViewModel
 
@@ -150,6 +153,7 @@ final class ClipboardViewModel: ObservableObject {
 
     deinit {
         operationNoticeHideTask?.cancel()
+        silentPresentationEndTask?.cancel()
         autoPreviewTask?.cancel()
         if let keyDownMonitor {
             NSEvent.removeMonitor(keyDownMonitor)

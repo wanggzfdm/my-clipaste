@@ -8,7 +8,14 @@ extension ClipboardViewModel {
             .compactMap(\.clipboardRecordChange)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] change in
-                guard let self, self.hasPreparedPanelData else { return }
+                guard let self else { return }
+
+                if self.hasPreparedPanelData == false {
+                    Task { @MainActor [weak self] in
+                        await self?.refreshWarmCacheAfterStoreChange(change)
+                    }
+                    return
+                }
 
                 Task { @MainActor [weak self] in
                     await self?.refreshRecordAfterStoreChange(change)
@@ -29,7 +36,9 @@ extension ClipboardViewModel {
             lastSelectedID == previousFirstVisibleID
 
         if change.kind == .delete {
-            removeItem(withHash: change.contentHash)
+            performSilentListMutation {
+                self.removeItem(withHash: change.contentHash)
+            }
             if wasPanelActive {
                 reconcileSelectionAfterDisplayedItemsChange()
             } else {
@@ -47,7 +56,16 @@ extension ClipboardViewModel {
             return
         }
 
-        upsertItem(item, shouldResort: change.kind.requiresResort)
+        let routeKey = ClipboardRuntimeStore.shared.rootIdentity
+        ClipboardHistoryWarmCache.shared.prependOrUpdate(item, routeKey: routeKey)
+
+        // Same-hash replace: reconcile fields only — never animate a second insert
+        // when an optimistic memory item already occupies this hash.
+        let alreadyPresent = itemIndexByHash[item.contentHash] != nil
+        performSilentListMutation {
+            self.upsertItem(item, shouldResort: change.kind.requiresResort)
+        }
+
         if wasPanelActive {
             reconcileSelectionAfterDisplayedItemsChange()
         } else {
@@ -55,10 +73,22 @@ extension ClipboardViewModel {
         }
 
         if shouldFollowTopInsertion,
+           alreadyPresent == false,
            let previousFirstVisibleID,
            displayedItemsForInteraction.first?.id != previousFirstVisibleID {
             selectFirstDisplayedItem()
         }
+    }
+
+    /// When the panel VM has not been prepared yet, still keep warm cache current
+    /// so the next open primes with the latest capture.
+    func refreshWarmCacheAfterStoreChange(_ change: ClipboardRecordChange) async {
+        guard change.kind != .delete else { return }
+        guard let item = await StorageManager.shared.fetchItem(hash: change.contentHash) else {
+            return
+        }
+        let routeKey = ClipboardRuntimeStore.shared.rootIdentity
+        ClipboardHistoryWarmCache.shared.prependOrUpdate(item, routeKey: routeKey)
     }
 }
 
