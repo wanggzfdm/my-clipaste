@@ -70,6 +70,8 @@ struct ClipboardCardView: View {
         static let baseCardSize: CGFloat = 252
         static let cardScale: CGFloat = 0.98
         static let cardSize = baseCardSize * cardScale
+        /// Match on-screen card content (~247pt); 2x retina headroom without over-decoding.
+        static let thumbnailMaxPixelSize: Int = 320
     }
 
     private var cardCornerRadius: CGFloat {
@@ -85,8 +87,10 @@ struct ClipboardCardView: View {
     }
 
     private var cardSurfaceColor: Color {
+        // Slightly more opaque than the old glass+blur stack so cards stay readable
+        // without a per-card NSVisualEffectView.
         (colorScheme == .dark ? Color.black : Color(nsColor: .windowBackgroundColor))
-            .opacity(colorScheme == .dark ? 0.78 : 0.58)
+            .opacity(colorScheme == .dark ? 0.88 : 0.92)
     }
 
     private var headerSurfaceColor: Color {
@@ -116,9 +120,10 @@ struct ClipboardCardView: View {
     }
 
     private var cardShadowColor: Color {
+        // Only the selected card casts a shadow — unselected cards skip offscreen shadow passes.
         isSelected
             ? sourceAccentColor.opacity(colorScheme == .dark ? 0.18 : 0.12)
-            : Color.black.opacity(colorScheme == .dark ? 0.24 : 0.11)
+            : Color.clear
     }
 
     private var resolvedAppIcon: NSImage? {
@@ -145,10 +150,10 @@ struct ClipboardCardView: View {
                 .padding(.bottom, 13)
         }
         .frame(width: Layout.cardSize, height: Layout.cardSize)
+        // Solid surface only — panel glass already lives on the window chrome.
+        // Per-card NSVisualEffectView was the top GPU cost while scrolling.
         .background {
             ZStack {
-                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-
                 cardSurfaceColor
 
                 if isSelected {
@@ -174,7 +179,12 @@ struct ClipboardCardView: View {
                 )
         }
         .clipShape(.rect(cornerRadius: cardCornerRadius, style: .continuous))
-        .shadow(color: cardShadowColor, radius: isSelected ? 14 : 9, x: 0, y: 5)
+        .shadow(
+            color: cardShadowColor,
+            radius: isSelected ? 10 : 0,
+            x: 0,
+            y: isSelected ? 4 : 0
+        )
         .animation(nil, value: showsQuickPasteBadge)
         .background {
             if let quickPasteIndex {
@@ -268,7 +278,6 @@ struct ClipboardCardView: View {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .stroke(Color.white.opacity(colorScheme == .dark ? 0.16 : 0.22), lineWidth: 0.8)
                 }
-                .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.14 : 0.10), radius: 4, x: 0, y: 1)
                 .padding(.top, 6)
                 .padding(.trailing, 10)
         }
@@ -306,12 +315,11 @@ struct ClipboardCardView: View {
                 .foregroundStyle(Color(nsColor: .systemGray))
                 .padding(.horizontal, 4)
                 .frame(height: 22)
-                .background(.regularMaterial, in: Capsule())
+                .background(Color(nsColor: .controlBackgroundColor).opacity(0.92), in: Capsule())
                 .overlay {
                     Capsule()
                         .stroke(Color.black.opacity(0.10), lineWidth: 0.5)
                 }
-                .shadow(color: Color.black.opacity(0.12), radius: 3, x: 0, y: 1)
                 .contentShape(Capsule())
             }
             .menuStyle(.borderlessButton)
@@ -336,7 +344,7 @@ struct ClipboardCardView: View {
                     CheckerboardBackground()
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                    ClipboardFileThumbnailView(fileURL: fileURL, maxPixelSize: 480) {
+                    ClipboardFileThumbnailView(fileURL: fileURL, maxPixelSize: Layout.thumbnailMaxPixelSize) {
                         Image(nsImage: NSWorkspace.shared.icon(forFile: displayPath))
                             .resizable()
                             .aspectRatio(contentMode: .fit)
@@ -374,7 +382,7 @@ struct ClipboardCardView: View {
                 CheckerboardBackground()
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-                ClipboardThumbnailView(itemID: item.id, maxPixelSize: 480) {
+                ClipboardThumbnailView(itemID: item.id, maxPixelSize: Layout.thumbnailMaxPixelSize) {
                     Group {
                         if item.hasImagePreview || item.hasImageData {
                             ProgressView()
@@ -445,7 +453,9 @@ struct ClipboardCardView: View {
     }
 
     private var showsAIShortcut: Bool {
-        viewModel.aiSettingsViewModel.isAIEnabled
+        // Hide during fling — menu + material capsule is unnecessary mid-scroll work.
+        !shouldDisableAnimations
+            && viewModel.aiSettingsViewModel.isAIEnabled
             && (isHovered || isSelected)
             && viewModel.isQuickPasteModifierHeld == false
     }
@@ -476,38 +486,56 @@ struct ClipboardCardView: View {
 
 // MARK: - Checkerboard Background (for transparent images)
 
-/// 经典灰白棋盘格 — 透明图片可视化底色
+/// 经典灰白棋盘格 — 透明图片可视化底色。
+/// 使用预渲染 tile + `.tile` 平铺，避免滚动时逐格 Canvas 重绘。
 private struct CheckerboardBackground: View {
     @Environment(\.colorScheme) private var colorScheme
 
-    let cellSize: CGFloat = 8
-
-    private var lightColor: Color {
-        colorScheme == .dark
-            ? Color(nsColor: NSColor(calibratedWhite: 0.16, alpha: 0.85))
-            : Color.white.opacity(0.8)
-    }
-
-    private var darkColor: Color {
-        colorScheme == .dark
-            ? Color(nsColor: NSColor(calibratedWhite: 0.09, alpha: 0.90))
-            : Color.gray.opacity(0.15)
-    }
-
     var body: some View {
-        Canvas { context, size in
-            let cols = Int(ceil(size.width / cellSize))
-            let rows = Int(ceil(size.height / cellSize))
-            for row in 0..<rows {
-                for col in 0..<cols {
-                    let isEven = (row + col) % 2 == 0
-                    let rect = CGRect(x: CGFloat(col) * cellSize,
-                                      y: CGFloat(row) * cellSize,
-                                      width: cellSize, height: cellSize)
-                    context.fill(Path(rect), with: .color(isEven ? lightColor : darkColor))
-                }
+        Image(nsImage: CheckerboardTileCache.image(isDark: colorScheme == .dark))
+            .resizable(resizingMode: .tile)
+    }
+}
+
+private enum CheckerboardTileCache {
+    private static let lightKey = "checker-light-v1" as NSString
+    private static let darkKey = "checker-dark-v1" as NSString
+    private static let cache = NSCache<NSString, NSImage>()
+    private static let cellSize: CGFloat = 8
+    private static let tileCells = 2
+
+    static func image(isDark: Bool) -> NSImage {
+        let key = isDark ? darkKey : lightKey
+        if let cached = cache.object(forKey: key) {
+            return cached
+        }
+
+        let tileSide = cellSize * CGFloat(tileCells)
+        let light = isDark
+            ? NSColor(calibratedWhite: 0.16, alpha: 0.85)
+            : NSColor.white.withAlphaComponent(0.8)
+        let dark = isDark
+            ? NSColor(calibratedWhite: 0.09, alpha: 0.90)
+            : NSColor.gray.withAlphaComponent(0.15)
+
+        let image = NSImage(size: NSSize(width: tileSide, height: tileSide))
+        image.lockFocus()
+        for row in 0..<tileCells {
+            for col in 0..<tileCells {
+                let isEven = (row + col) % 2 == 0
+                (isEven ? light : dark).setFill()
+                NSRect(
+                    x: CGFloat(col) * cellSize,
+                    y: CGFloat(row) * cellSize,
+                    width: cellSize,
+                    height: cellSize
+                ).fill()
             }
         }
+        image.unlockFocus()
+        image.isTemplate = false
+        cache.setObject(image, forKey: key)
+        return image
     }
 }
 

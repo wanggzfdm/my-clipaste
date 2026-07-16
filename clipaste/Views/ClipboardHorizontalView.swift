@@ -7,6 +7,7 @@ struct ClipboardHorizontalView: View {
     @AppStorage("requireCmdToDelete") private var requireCmdToDelete: Bool = false
     @AppStorage("singleClickPaste") private var singleClickPaste = true
     @State private var quickPasteIndexesByItemID: [UUID: Int] = [:]
+    @State private var isListScrolling = false
 
     private let quickPasteCoordinateSpaceName = "ClipboardHorizontalQuickPasteSpace"
 
@@ -28,7 +29,8 @@ struct ClipboardHorizontalView: View {
                                 id: item.id,
                                 sourceIndex: index,
                                 coordinateSpaceName: quickPasteCoordinateSpaceName,
-                                isTrackingEnabled: viewModel.isQuickPasteModifierHeld
+                                // Skip Preference fan-out while flinging — major LazyHStack cost.
+                                isTrackingEnabled: viewModel.isQuickPasteModifierHeld && !isListScrolling
                             )
                         }
                     }
@@ -37,8 +39,16 @@ struct ClipboardHorizontalView: View {
                     .padding(.bottom, 5.5)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                 }
+                .background {
+                    ScrollActivityObserver(isScrolling: $isListScrolling)
+                        .frame(width: 0, height: 0)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+                .disableAnimationsWhenScrolling(isListScrolling)
                 .coordinateSpace(name: quickPasteCoordinateSpaceName)
                 .onPreferenceChange(ClipboardQuickPasteVisibleFramePreferenceKey.self) { frames in
+                    guard !isListScrolling else { return }
                     updateQuickPasteIndexes(
                         frames: frames,
                         viewportSize: viewportProxy.size
@@ -72,6 +82,12 @@ struct ClipboardHorizontalView: View {
                 .onChange(of: viewModel.isQuickPasteModifierHeld) { _, isHeld in
                     guard !isHeld, !quickPasteIndexesByItemID.isEmpty else { return }
                     quickPasteIndexesByItemID = [:]
+                }
+                .onChange(of: isListScrolling) { _, scrolling in
+                    // Drop stale indexes when a fling starts; recompute after idle if needed.
+                    if scrolling, !quickPasteIndexesByItemID.isEmpty {
+                        quickPasteIndexesByItemID = [:]
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }

@@ -12,20 +12,23 @@ private struct ShouldDisableAnimationsKey: EnvironmentKey {
 }
 
 struct DisableAnimationsModifier: ViewModifier {
-    @Environment(\.shouldDisableAnimations) var shouldDisable
-    
+    let shouldDisable: Bool
+
     func body(content: Content) -> some View {
-        content.transaction { transaction in
-            if shouldDisable {
-                transaction.disablesAnimations = true
-                transaction.animation = nil
+        content
+            .environment(\.shouldDisableAnimations, shouldDisable)
+            .transaction { transaction in
+                if shouldDisable {
+                    transaction.disablesAnimations = true
+                    transaction.animation = nil
+                }
             }
-        }
     }
 }
 
 extension View {
+    /// Pushes `shouldDisableAnimations` and also applies transaction-level animation kill.
     func disableAnimationsWhenScrolling(_ disable: Bool) -> some View {
-        modifier(DisableAnimationsModifier())
+        modifier(DisableAnimationsModifier(shouldDisable: disable))
     }
 }
