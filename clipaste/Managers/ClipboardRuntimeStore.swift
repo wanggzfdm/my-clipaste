@@ -1100,7 +1100,7 @@ final class ClipboardRuntimeStore {
                 fetchLimit: ClipboardHistoryWarmCache.defaultLimit,
                 offset: 0
             )
-            await ClipboardHistoryWarmCache.shared.update(items: warmItems, routeKey: routeKey)
+            ClipboardHistoryWarmCache.shared.update(items: warmItems, routeKey: routeKey)
             await MainActor.run {
                 NotificationCenter.default.post(
                     name: .clipboardWarmCacheDidChange,

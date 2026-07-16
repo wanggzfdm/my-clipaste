@@ -38,6 +38,31 @@ extension ClipboardViewModel {
         loadCustomGroups()
     }
 
+    /// Synchronously primes list content for the panel open hot path.
+    /// Prefer warm cache / already-loaded items so `showPanel` can order front immediately.
+    func primePanelContentForImmediatePresentation() {
+        preparePanelDataIfNeeded()
+        if items.isEmpty {
+            hydrateFromWarmCacheIfAvailable()
+        }
+    }
+
+    /// Background reconcile after the panel is already visible.
+    /// Avoids blocking `makeKeyAndOrderFront` on pasteboard capture or DB reads.
+    func refreshHistoryAfterPresentationIfNeeded() async {
+        if needsReloadOnNextPresentation {
+            needsReloadOnNextPresentation = false
+            shouldResetSelectionToFirstDisplayedItem = true
+            loadData(mode: .fullRefresh)
+            loadCustomGroups()
+            return
+        }
+
+        if items.isEmpty {
+            await refreshFirstHistoryPageForPresentation()
+        }
+    }
+
     func refreshFirstHistoryPageForPresentation() async {
         preparePanelDataIfNeeded()
 
@@ -137,13 +162,13 @@ extension ClipboardViewModel {
         }
 
         let routeKey = ClipboardRuntimeStore.shared.rootIdentity
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            guard let cachedItems = await ClipboardHistoryWarmCache.shared.snapshot(for: routeKey) else { return }
-            guard self.items.isEmpty || self.hasPreparedPanelData == false else { return }
-            self.applyLoadedItems(cachedItems)
-            self.loadedHistoryCount = cachedItems.count
-            self.hasLoadedFullHistory = cachedItems.count < ClipboardHistoryWarmCache.defaultLimit
+        guard let cachedItems = ClipboardHistoryWarmCache.shared.snapshot(for: routeKey) else {
+            return
         }
+        guard items.isEmpty || hasPreparedPanelData == false else { return }
+
+        applyLoadedItems(cachedItems)
+        loadedHistoryCount = cachedItems.count
+        hasLoadedFullHistory = cachedItems.count < ClipboardHistoryWarmCache.defaultLimit
     }
 }

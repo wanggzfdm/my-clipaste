@@ -58,7 +58,7 @@ class ClipboardPanelManager {
         if panel == nil {
             setupPanel()
         }
-        panelViewModel.preparePanelDataIfNeeded()
+        panelViewModel.primePanelContentForImmediatePresentation()
     }
 
     func presentGlobalSelectionTranslation(text: String, sourceApp: NSRunningApplication?) {
@@ -284,17 +284,22 @@ class ClipboardPanelManager {
     }
 
     /// Shows the panel sized for the current layout mode, then animates it in.
+    /// Hot path: prime in-memory content and order front immediately; pasteboard capture
+    /// and history reconcile run in parallel after the panel is visible.
     func showPanel() {
         guard !isVisible, !isPreparingToShow else { return }
 
         isPreparingToShow = true
+        panelViewModel.primePanelContentForImmediatePresentation()
+        guard isPreparingToShow else { return }
+        isPreparingToShow = false
+        presentPreparedPanel()
+
         Task { @MainActor [weak self] in
             guard let self else { return }
-            await ClipboardMonitor.shared.captureCurrentPasteboardIfNeeded()
-            await self.panelViewModel.refreshFirstHistoryPageForPresentation()
-            guard self.isPreparingToShow else { return }
-            self.isPreparingToShow = false
-            self.presentPreparedPanel()
+            async let capture: Void = ClipboardMonitor.shared.captureCurrentPasteboardIfNeeded()
+            async let refresh: Void = self.panelViewModel.refreshHistoryAfterPresentationIfNeeded()
+            _ = await (capture, refresh)
         }
     }
 
