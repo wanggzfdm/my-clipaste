@@ -27,29 +27,24 @@ struct AppIconView: View {
 }
 
 private enum AppIconResolver {
-    static let cache = NSCache<NSString, NSImage>()
     static let safariBundleIdentifier = "com.apple.Safari"
 
     static var safariFallbackIcon: NSImage? {
         icon(for: safariBundleIdentifier, allowFallback: false)
     }
 
+    // 统一委托给 AppIconManager 的共享缓存(有 count/cost 上限),
+    // 避免同一 bundleID 的多分辨率图标被两份 NSCache 各存一份。
     static func icon(for bundleIdentifier: String?, allowFallback: Bool = true) -> NSImage? {
         guard let bundleIdentifier = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
               bundleIdentifier.isEmpty == false else {
             return allowFallback ? safariFallbackIcon : nil
         }
 
-        if let cached = cache.object(forKey: bundleIdentifier as NSString) {
-            return cached
+        if let icon = AppIconManager.shared.getIcon(for: bundleIdentifier) {
+            return icon
         }
 
-        guard let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
-            return allowFallback ? safariFallbackIcon : nil
-        }
-
-        let icon = NSWorkspace.shared.icon(forFile: applicationURL.path)
-        cache.setObject(icon, forKey: bundleIdentifier as NSString)
-        return icon
+        return allowFallback ? safariFallbackIcon : nil
     }
 }

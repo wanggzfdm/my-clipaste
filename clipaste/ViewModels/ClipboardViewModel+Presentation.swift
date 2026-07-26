@@ -86,6 +86,34 @@ extension ClipboardViewModel {
     func endPresentation() {
         isPanelPresentationActive = false
         dismissAutoPreviewIfNeeded()
+        releaseTransientResourcesAfterPanelClose()
+    }
+
+    /// 面板关闭后收缩内存:释放高分预览图与 QuickLook 锚点,
+    /// 并把全量历史裁剪回 warm cache 首屏规模。
+    /// 下次打开由 needsReloadOnNextPresentation 触发全量后台重载,
+    /// 首屏内容仍旧即时可见(裁剪保留的头部 = warm cache 内容)。
+    private func releaseTransientResourcesAfterPanelClose() {
+        highResImage = nil
+        quickLookAnchorFramesByItemID.removeAll()
+
+        let retainCount = ClipboardHistoryWarmCache.defaultLimit
+        guard items.count > retainCount else { return }
+
+        historyLoadTask?.cancel()
+        historyLoadTask = nil
+        dataLoadGeneration &+= 1
+        isBulkHistoryLoading = false
+        isLoadingMoreHistory = false
+        isInitialHistoryLoading = false
+
+        replaceItems(Array(items.prefix(retainCount)), enqueueLinkMetadata: false)
+        refreshDisplayedItemsFromCurrentScope()
+        clampSelectionToDisplayedItems()
+
+        hasLoadedFullHistory = false
+        loadedHistoryCount = items.count
+        needsReloadOnNextPresentation = true
     }
 
     func setupDataSubscriptions() {

@@ -231,5 +231,11 @@ private extension ClipboardViewModel {
         currentFilter = filter
         selectedBuiltInGroup = builtInGroup
         selectedGroupId = groupID
+
+        // 同帧刷新:不等 Combine 管线的订阅调度,让标签高亮与卡片列表同时切换。
+        // 管线随后仍会触发一次 performAsyncFilter,结果幂等,
+        // rematerializeDisplayedItems 的差异比较会吞掉重复发布。
+        refreshDisplayedItemsFromCurrentScope()
+        reconcileSelectionAfterDisplayedItemsChange()
     }
 }

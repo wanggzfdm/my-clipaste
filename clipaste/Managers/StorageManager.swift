@@ -19,7 +19,7 @@ private struct ClipboardRecordSnapshot: Sendable {
     let groupIdsRaw: String?
     let customTitle: String?
     let linkTitle: String?
-    let linkIconData: Data?
+    let hasLinkIcon: Bool
     let isPinned: Bool
     let hasRTF: Bool
     let sourcePlatformRawValue: String
@@ -130,7 +130,7 @@ actor ClipboardSearcher {
                 groupIdsRaw: record.groupIdsRaw,
                 customTitle: record.customTitle,
                 linkTitle: record.linkTitle,
-                linkIconData: record.linkIconData,
+                hasLinkIcon: record.linkIconData != nil,
                 isPinned: record.isPinned,
                 hasRTF: record.rtfData != nil || record.richTextArchiveData != nil,
                 sourcePlatformRawValue: record.sourcePlatformRawValue,
@@ -666,6 +666,14 @@ final class StorageManager {
         }
     }
 
+    func loadLinkIconData(id: UUID) async -> Data? {
+        let container = self.container
+        return await detachedRead {
+            let actor = ClipboardStoreActor(modelContainer: container)
+            return await actor.loadLinkIconData(id: id)
+        }
+    }
+
     func loadImageUTType(id: UUID) async -> String? {
         let container = self.container
         return await detachedRead {
@@ -704,7 +712,7 @@ final class StorageManager {
             groupIDs: normalizedGroupIDs(primaryGroupID: record.groupId, groupIdsRaw: record.groupIdsRaw),
             customTitle: record.customTitle,
             linkTitle: record.linkTitle,
-            linkIconData: record.linkIconData,
+            hasLinkIcon: record.hasLinkIcon,
             isPinned: record.isPinned,
             hasRTF: record.hasRTF,
             sourcePlatformRawValue: record.sourcePlatformRawValue,
@@ -904,7 +912,7 @@ actor ClipboardStoreActor {
             groupIdsRaw: record.groupIdsRaw,
             customTitle: record.customTitle,
             linkTitle: record.linkTitle,
-            linkIconData: record.linkIconData,
+            hasLinkIcon: record.linkIconData != nil,
             isPinned: record.isPinned,
             hasRTF: record.rtfData != nil || record.richTextArchiveData != nil,
             sourcePlatformRawValue: record.sourcePlatformRawValue,
@@ -1226,7 +1234,16 @@ actor ClipboardStoreActor {
     }
 
     func deleteGroup(id: String) {
-        let recordDescriptor = FetchDescriptor<ClipboardRecord>()
+        // 粗过滤:只加载可能包含该分组的记录,避免全表 fault-in。
+        // groupIdsRaw 是 JSON 字符串,contains 足够作为超集过滤,
+        // 精确判断仍由下方 normalizedGroupIDs 完成。
+        let targetID = id
+        let recordDescriptor = FetchDescriptor<ClipboardRecord>(
+            predicate: #Predicate<ClipboardRecord> { record in
+                record.groupId == targetID ||
+                (record.groupIdsRaw?.contains(targetID) == true)
+            }
+        )
         if let records = try? modelContext.fetch(recordDescriptor) {
             for record in records {
                 var groupIDs = normalizedGroupIDs(primaryGroupID: record.groupId, groupIdsRaw: record.groupIdsRaw)
@@ -1587,36 +1604,58 @@ actor ClipboardStoreActor {
     }
 
     func exportStore() -> ClipboardStoreExport {
-        let records = ((try? modelContext.fetch(FetchDescriptor<ClipboardRecord>())) ?? []).map {
-            ClipboardRecordExport(
-                id: $0.id,
-                timestamp: $0.timestamp,
-                contentHash: $0.contentHash,
-                typeRawValue: $0.typeRawValue,
-                plainText: $0.plainText,
-                previewImageData: $0.previewImageData,
-                imageData: $0.imageData,
-                imageUTType: $0.imageUTType,
-                imageByteCount: $0.imageByteCount,
-                imagePixelWidth: $0.imagePixelWidth,
-                imagePixelHeight: $0.imagePixelHeight,
-                appBundleID: $0.appBundleID,
-                appLocalizedName: $0.appLocalizedName,
-                appIconDominantColorHex: $0.appIconDominantColorHex,
-                appIconData: $0.appIconData,
-                groupId: $0.groupId,
-                groupIdsRaw: $0.groupIdsRaw,
-                customTitle: $0.customTitle,
-                linkTitle: $0.linkTitle,
-                linkIconData: $0.linkIconData,
-                isPinned: $0.isPinned,
-                rtfData: $0.rtfData,
-                richTextArchiveData: $0.richTextArchiveData,
-                sourcePlatformRawValue: $0.sourcePlatformRawValue,
-                sourceDeviceName: $0.sourceDeviceName,
-                captureMethodRawValue: $0.captureMethodRawValue,
-                captureSessionID: $0.captureSessionID
+        // 分批 fetch + 每批后 rollback 清空 ModelContext 对象图,
+        // 避免全表记录连同 externalStorage BLOB 一次性 fault-in 常驻上下文。
+        var records: [ClipboardRecordExport] = []
+        let batchSize = 64
+        var offset = 0
+
+        while true {
+            var descriptor = FetchDescriptor<ClipboardRecord>(
+                sortBy: [SortDescriptor(\.timestamp, order: .forward)]
             )
+            descriptor.fetchLimit = batchSize
+            descriptor.fetchOffset = offset
+
+            let batch = (try? modelContext.fetch(descriptor)) ?? []
+            guard batch.isEmpty == false else { break }
+
+            autoreleasepool {
+                records.append(contentsOf: batch.map {
+                    ClipboardRecordExport(
+                        id: $0.id,
+                        timestamp: $0.timestamp,
+                        contentHash: $0.contentHash,
+                        typeRawValue: $0.typeRawValue,
+                        plainText: $0.plainText,
+                        previewImageData: $0.previewImageData,
+                        imageData: $0.imageData,
+                        imageUTType: $0.imageUTType,
+                        imageByteCount: $0.imageByteCount,
+                        imagePixelWidth: $0.imagePixelWidth,
+                        imagePixelHeight: $0.imagePixelHeight,
+                        appBundleID: $0.appBundleID,
+                        appLocalizedName: $0.appLocalizedName,
+                        appIconDominantColorHex: $0.appIconDominantColorHex,
+                        appIconData: $0.appIconData,
+                        groupId: $0.groupId,
+                        groupIdsRaw: $0.groupIdsRaw,
+                        customTitle: $0.customTitle,
+                        linkTitle: $0.linkTitle,
+                        linkIconData: $0.linkIconData,
+                        isPinned: $0.isPinned,
+                        rtfData: $0.rtfData,
+                        richTextArchiveData: $0.richTextArchiveData,
+                        sourcePlatformRawValue: $0.sourcePlatformRawValue,
+                        sourceDeviceName: $0.sourceDeviceName,
+                        captureMethodRawValue: $0.captureMethodRawValue,
+                        captureSessionID: $0.captureSessionID
+                    )
+                })
+            }
+
+            offset += batch.count
+            modelContext.rollback()
         }
 
         let groups = ((try? modelContext.fetch(FetchDescriptor<ClipboardGroupModel>())) ?? []).map {
@@ -1802,6 +1841,10 @@ actor ClipboardStoreActor {
 
     func loadRTFData(id: UUID) -> Data? {
         fetchStoredRecord(id: id)?.rtfData
+    }
+
+    func loadLinkIconData(id: UUID) -> Data? {
+        fetchStoredRecord(id: id)?.linkIconData
     }
 
     func loadImageUTType(id: UUID) -> String? {

@@ -1,11 +1,13 @@
 import Foundation
 
 struct ClipboardLinkPreviewViewModel: Hashable {
+    let itemID: UUID
     let title: String
     let domain: String
     let displayURL: String
     let fullURL: String
-    let iconData: Data?
+    /// 图标二进制不随列表常驻内存,视图凭 itemID 经 ClipboardImagePipeline 按需加载。
+    let hasIcon: Bool
 
     init(item: ClipboardItem) {
         let rawURL = Self.preferredURLText(from: item)
@@ -14,6 +16,7 @@ struct ClipboardLinkPreviewViewModel: Hashable {
         let normalizedDomain = Self.displayDomain(from: host)
         let metadataTitle = item.linkTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        self.itemID = item.id
         self.title = Self.preferredTitle(
             customTitle: item.trimmedCustomTitle,
             metadataTitle: metadataTitle,
@@ -22,7 +25,7 @@ struct ClipboardLinkPreviewViewModel: Hashable {
         self.domain = normalizedDomain
         self.displayURL = rawURL
         self.fullURL = rawURL
-        self.iconData = item.linkIconData
+        self.hasIcon = item.hasLinkIcon
     }
 }
 

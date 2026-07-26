@@ -421,7 +421,12 @@ struct ClipboardVerticalItemView: View {
             return
         }
 
-        richPreviewText = await ListRenderEngine.shared.prepareText(for: item)
+        let prepared = await ListRenderEngine.shared.prepareText(for: item)
+        guard !Task.isCancelled else { return }
+        // 纯文本垫底 → RTF 渲染切换用交叉淡入,避免字体/颜色瞬间跳变。
+        withAnimation(.easeInOut(duration: 0.18)) {
+            richPreviewText = prepared
+        }
     }
 }
 

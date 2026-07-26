@@ -57,7 +57,9 @@ final class ClipboardViewModel: ObservableObject {
     @Published var isLoadingMoreHistory = false
     var lastSelectedID: UUID? = nil
     @Published var quickLookItem: ClipboardItem? = nil
-    @Published var quickLookAnchorFramesByItemID: [UUID: CGRect] = [:]
+    /// 非 @Published:滚动时每帧被所有可见卡片写入,发布会引发全卡片级联重绘;
+    /// 仅 QuickLook 窗口定位时按需读取,无 SwiftUI body 依赖。
+    var quickLookAnchorFramesByItemID: [UUID: CGRect] = [:]
     @Published var forceQuickLookTranslate: Bool = false
     @Published var quickLookTranslationOverrideText: String? = nil
     @Published var operationNotice: String? = nil
@@ -108,6 +110,9 @@ final class ClipboardViewModel: ObservableObject {
     var itemIndexByID: [UUID: Int] = [:]
     var itemIndexByHash: [String: Int] = [:]
     var pendingLinkMetadataHashes: Set<String> = []
+    /// record 变更通知的合并缓冲(见 setupRecordChangeSubscriptions)。
+    var pendingRecordChangesByHash: [String: ClipboardRecordChange] = [:]
+    var pendingRecordChangeFlushTask: Task<Void, Never>? = nil
     var operationNoticeHideTask: Task<Void, Never>? = nil
     var suppressedPasteItemIDs: Set<UUID> = []
     /// When true, passive list mutations (optimistic capture / DB reconcile) suppress SwiftUI animations.
@@ -159,6 +164,7 @@ final class ClipboardViewModel: ObservableObject {
         operationNoticeHideTask?.cancel()
         silentPresentationEndTask?.cancel()
         autoPreviewTask?.cancel()
+        pendingRecordChangeFlushTask?.cancel()
         if let keyDownMonitor {
             NSEvent.removeMonitor(keyDownMonitor)
         }

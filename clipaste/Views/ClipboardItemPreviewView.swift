@@ -76,6 +76,11 @@ struct ClipboardItemPreviewView: View {
         .layoutPriority(1)
         .background(Color(nsColor: .windowBackgroundColor))
         .clipShape(.rect(cornerRadius: panelCornerRadius))
+        // 自动翻译:换预览条目时重新检测。函数内部自带守卫
+        //(仅纯文本、非中文、AI 已配置时才发起请求)。
+        .task(id: item.id) {
+            await refreshPreviewTranslation()
+        }
         .overlay(
             RoundedRectangle(cornerRadius: panelCornerRadius)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -111,30 +116,10 @@ struct ClipboardItemPreviewView: View {
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }
-
-            // DEBUG: translation state
-            Text(debugStateLabel)
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .foregroundStyle(.red)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(Color.yellow.opacity(0.3))
-                .clipShape(RoundedRectangle(cornerRadius: 3))
         }
         .padding(.horizontal, padding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
-    }
-    
-    private var debugStateLabel: String {
-        switch translationState {
-        case .idle: return "TR:idle"
-        case .skipped: return "TR:skipped"
-        case .unavailable(let msg): return "TR:unavail(\(msg.prefix(20)))"
-        case .translating: return "TR:translating"
-        case .translated: return "TR:done"
-        case .failed(let msg): return "TR:fail(\(msg.prefix(20)))"
-        }
     }
 
     private var typeBadgeColor: Color {

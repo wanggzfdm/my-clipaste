@@ -432,7 +432,7 @@ extension ClipboardViewModel {
                 groupIDs: item.groupIDs,
                 customTitle: item.customTitle,
                 linkTitle: item.linkTitle,
-                linkIconData: item.linkIconData,
+                hasLinkIcon: item.hasLinkIcon,
                 isPinned: item.isPinned,
                 hasRTF: item.hasRTF,
                 sourcePlatformRawValue: item.sourcePlatformRawValue,

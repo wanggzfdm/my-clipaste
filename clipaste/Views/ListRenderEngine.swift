@@ -14,6 +14,10 @@ final class ListRenderEngine {
     /// 内存缓存：卡片 ID → 已排版的 AttributedString
     private var cache: [UUID: AttributedString] = [:]
 
+    /// FIFO 淘汰序:字典无 NSCache 那样的容量语义,不设上限会随历史滚动无界增长。
+    private var cacheInsertionOrder: [UUID] = []
+    private static let cacheEntryLimit = 256
+
     /// 正在后台排版中的任务集合，防止同一个 item 被重复解析。
     private var inflight: [UUID: Task<AttributedString?, Never>] = [:]
 
@@ -64,7 +68,7 @@ final class ListRenderEngine {
         inflight[id] = nil
 
         if let result {
-            cache[id] = result
+            storeInCache(result, for: id)
         }
 
         return result
@@ -73,6 +77,7 @@ final class ListRenderEngine {
     /// 清除指定卡片的缓存（编辑保存后调用）
     func invalidate(id: UUID) {
         cache.removeValue(forKey: id)
+        cacheInsertionOrder.removeAll { $0 == id }
         inflight[id]?.cancel()
         inflight.removeValue(forKey: id)
     }
@@ -80,8 +85,21 @@ final class ListRenderEngine {
     /// 清除全部缓存（数据刷新后调用）
     func invalidateAll() {
         cache.removeAll()
+        cacheInsertionOrder.removeAll()
         inflight.values.forEach { $0.cancel() }
         inflight.removeAll()
+    }
+
+    private func storeInCache(_ text: AttributedString, for id: UUID) {
+        if cache[id] == nil {
+            cacheInsertionOrder.append(id)
+        }
+        cache[id] = text
+
+        while cacheInsertionOrder.count > Self.cacheEntryLimit {
+            let evicted = cacheInsertionOrder.removeFirst()
+            cache.removeValue(forKey: evicted)
+        }
     }
 }
 

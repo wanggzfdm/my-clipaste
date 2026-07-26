@@ -211,12 +211,11 @@ struct ClipboardCardView: View {
         }
         .clipboardContextMenu(for: item, viewModel: viewModel)
         .freezingHoverWhileMenuTracking(isMenuTracking: $isMenuTracking) { hovering in
-            if shouldDisableAnimations {
+            // 滚动中卡片从光标下滑过会连续触发 enter/exit,此时更新 isHovered
+            // 只会造成边框重绘;滚动结束后的下一次鼠标移动会恢复正确 hover 态。
+            guard !shouldDisableAnimations else { return }
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.9, blendDuration: 0.1)) {
                 isHovered = hovering
-            } else {
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.9, blendDuration: 0.1)) {
-                    isHovered = hovering
-                }
             }
         }
         .onDrag {
@@ -489,7 +488,16 @@ struct ClipboardCardView: View {
             return
         }
 
-        richPreviewText = await ListRenderEngine.shared.prepareText(for: item)
+        let prepared = await ListRenderEngine.shared.prepareText(for: item)
+        guard !Task.isCancelled else { return }
+        // 纯文本垫底 → RTF 渲染的分支切换用交叉淡入,避免字体/颜色瞬间跳变。
+        if shouldDisableAnimations {
+            richPreviewText = prepared
+        } else {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                richPreviewText = prepared
+            }
+        }
     }
 }
 

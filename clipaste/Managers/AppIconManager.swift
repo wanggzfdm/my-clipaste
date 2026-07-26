@@ -7,7 +7,12 @@ final class AppIconManager {
 
     private let cache = NSCache<NSString, NSImage>()
 
-    private init() {}
+    private init() {
+        // NSWorkspace 返回的应用图标是多分辨率 NSImage(单个可达数 MB),
+        // 必须设置上限,否则随复制来源应用增多缓存只增不减。
+        cache.countLimit = 64
+        cache.totalCostLimit = 20 * 1024 * 1024 // 20MB
+    }
 
     func getIcon(for bundleIdentifier: String) -> NSImage? {
         guard !bundleIdentifier.isEmpty else { return nil }
@@ -21,7 +26,10 @@ final class AppIconManager {
         }
 
         let icon = NSWorkspace.shared.icon(forFile: url.path)
-        cache.setObject(icon, forKey: bundleIdentifier as NSString)
+        let cost = icon.representations.reduce(0) { total, rep in
+            total + max(rep.pixelsWide, 1) * max(rep.pixelsHigh, 1) * 4
+        }
+        cache.setObject(icon, forKey: bundleIdentifier as NSString, cost: cost)
         return icon
     }
 

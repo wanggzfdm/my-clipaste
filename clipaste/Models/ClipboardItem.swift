@@ -99,7 +99,9 @@ struct ClipboardItem: Identifiable, Hashable, @unchecked Sendable {
     var groupIDs: [String] // 所属分组 ID 集合
     var customTitle: String? // 用户手动添加的标题
     var linkTitle: String?     // 链接预览：网页标题（后台 metadata 引擎抓取）
-    var linkIconData: Data?    // 链接预览：网站图标数据
+    /// 链接预览：是否存在网站图标。图标二进制不随列表常驻内存，
+    /// 由 ClipboardImagePipeline.linkIcon(for:) 按需加载。
+    var hasLinkIcon: Bool
     var isPinned: Bool         // 固定状态
     let hasRTF: Bool           // ⚠️ 架构红线：仅轻量标记，不持有富文本二进制
     let sourcePlatformRawValue: String
@@ -135,7 +137,7 @@ struct ClipboardItem: Identifiable, Hashable, @unchecked Sendable {
         groupIDs: [String] = [],
         customTitle: String? = nil,
         linkTitle: String? = nil,
-        linkIconData: Data? = nil,
+        hasLinkIcon: Bool = false,
         isPinned: Bool = false,
         hasRTF: Bool = false,
         sourcePlatformRawValue: String = "macOS",
@@ -177,7 +179,7 @@ struct ClipboardItem: Identifiable, Hashable, @unchecked Sendable {
         self.groupIDs = normalizedGroupIDs
         self.customTitle = customTitle
         self.linkTitle = linkTitle
-        self.linkIconData = linkIconData
+        self.hasLinkIcon = hasLinkIcon
         self.isPinned = isPinned
         self.hasRTF = hasRTF
         self.sourcePlatformRawValue = sourcePlatformRawValue
@@ -234,7 +236,7 @@ extension ClipboardItem {
         lhs.groupIDs == rhs.groupIDs &&
         lhs.customTitle == rhs.customTitle &&
         lhs.linkTitle == rhs.linkTitle &&
-        lhs.linkIconData == rhs.linkIconData &&
+        lhs.hasLinkIcon == rhs.hasLinkIcon &&
         lhs.isPinned == rhs.isPinned &&
         lhs.hasRTF == rhs.hasRTF &&
         lhs.sourcePlatformRawValue == rhs.sourcePlatformRawValue &&
@@ -268,7 +270,7 @@ extension ClipboardItem {
         hasher.combine(groupIDs)
         hasher.combine(customTitle)
         hasher.combine(linkTitle)
-        hasher.combine(linkIconData)
+        hasher.combine(hasLinkIcon)
         hasher.combine(isPinned)
         hasher.combine(hasRTF)
         hasher.combine(sourcePlatformRawValue)

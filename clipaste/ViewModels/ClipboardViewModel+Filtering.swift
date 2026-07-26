@@ -78,13 +78,34 @@ extension ClipboardViewModel {
         filterGeneration &+= 1
         let thisGeneration = filterGeneration
 
-        if cleanQuery.isEmpty && groupId == nil && typeFilter == nil && builtInGroup == nil {
-            self.publishDisplayedItemIDs(items.map(\.id))
+        // 无搜索词的分组/类型过滤只是 O(n) 的轻量比较(几百条 <1ms),
+        // 同步执行让标签高亮与卡片列表在同一帧切换;
+        // 走后台双跳会插入至少两个 runloop 周期的空白帧,用户会看到"加载过程"。
+        if cleanQuery.isEmpty {
+            let filteredIDs: [UUID]
+            if groupId == nil && typeFilter == nil && builtInGroup == nil {
+                filteredIDs = items.map(\.id)
+            } else {
+                filteredIDs = items.compactMap { item -> UUID? in
+                    if let filter = typeFilter, item.contentType != filter {
+                        return nil
+                    }
+                    if let gid = groupId, item.groupIDs.contains(gid) == false {
+                        return nil
+                    }
+                    if let builtInGroup, builtInGroup.matches(item) == false {
+                        return nil
+                    }
+                    return item.id
+                }
+            }
+            publishDisplayedItemIDs(filteredIDs)
             reconcileSelectionAfterDisplayedItemsChange()
             publishSearchScrollResetIfNeeded(query: cleanQuery)
             return
         }
 
+        // 文本搜索涉及 localizedStandardContains 等重操作,保持后台执行。
         DispatchQueue.global(qos: .userInitiated).async {
             let filteredIDs = items.compactMap { item -> UUID? in
                 if let filter = typeFilter, item.contentType != filter {

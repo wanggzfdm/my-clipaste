@@ -3,7 +3,9 @@ import SwiftUI
 
 struct ClipboardQuickLookAnchorReporter: NSViewRepresentable {
     let itemID: UUID
-    @ObservedObject var viewModel: ClipboardViewModel
+    /// 仅作引用传递,不观察:该 representable 不依赖 ViewModel 状态渲染,
+    /// 观察反而会在每次 objectWillChange 时触发 updateNSView。
+    let viewModel: ClipboardViewModel
 
     func makeNSView(context: Context) -> ReportingView {
         let view = ReportingView()

@@ -19,9 +19,13 @@ struct ClipboardThumbnailView<Placeholder: View>: View {
     }
 
     var body: some View {
+        // 缓存命中走同帧渲染,不闪占位符;只有真正的冷加载才异步淡入。
+        let resolvedImage = image
+            ?? ClipboardImagePipeline.shared.cachedThumbnail(for: itemID, maxPixelSize: maxPixelSize)
+
         Group {
-            if let image {
-                Image(nsImage: image)
+            if let resolvedImage {
+                Image(nsImage: resolvedImage)
                     .resizable()
                     .interpolation(.medium)
                     .aspectRatio(contentMode: .fit)
@@ -30,10 +34,22 @@ struct ClipboardThumbnailView<Placeholder: View>: View {
             }
         }
         .task(id: cacheIdentity) { @MainActor in
-            image = await ClipboardImagePipeline.shared.thumbnail(
+            if let cached = ClipboardImagePipeline.shared.cachedThumbnail(for: itemID, maxPixelSize: maxPixelSize) {
+                image = cached
+                return
+            }
+            let loaded = await ClipboardImagePipeline.shared.thumbnail(
                 for: itemID,
                 maxPixelSize: maxPixelSize
             )
+            if image == nil, loaded != nil {
+                // 占位符 → 图片:淡入;条目切换的旧图替换则直接切,避免二次闪烁。
+                withAnimation(.easeIn(duration: 0.2)) {
+                    image = loaded
+                }
+            } else {
+                image = loaded
+            }
         }
     }
 
@@ -60,9 +76,12 @@ struct ClipboardFileThumbnailView<Placeholder: View>: View {
     }
 
     var body: some View {
+        let resolvedImage = image
+            ?? ClipboardImagePipeline.shared.cachedThumbnail(forFileURL: fileURL, maxPixelSize: maxPixelSize)
+
         Group {
-            if let image {
-                Image(nsImage: image)
+            if let resolvedImage {
+                Image(nsImage: resolvedImage)
                     .resizable()
                     .interpolation(.medium)
                     .aspectRatio(contentMode: .fit)
@@ -71,10 +90,24 @@ struct ClipboardFileThumbnailView<Placeholder: View>: View {
             }
         }
         .task(id: cacheIdentity) { @MainActor in
-            image = await ClipboardImagePipeline.shared.thumbnail(
+            if let cached = ClipboardImagePipeline.shared.cachedThumbnail(
+                forFileURL: fileURL,
+                maxPixelSize: maxPixelSize
+            ) {
+                image = cached
+                return
+            }
+            let loaded = await ClipboardImagePipeline.shared.thumbnail(
                 forFileURL: fileURL,
                 maxPixelSize: maxPixelSize
             )
+            if image == nil, loaded != nil {
+                withAnimation(.easeIn(duration: 0.2)) {
+                    image = loaded
+                }
+            } else {
+                image = loaded
+            }
         }
     }
 

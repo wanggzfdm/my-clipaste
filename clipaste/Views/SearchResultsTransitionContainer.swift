@@ -16,6 +16,8 @@ struct SearchResultsTransitionContainer<Content: View>: View {
 
     var body: some View {
         content
+            .opacity(contentOpacity)
+            .offset(y: verticalOffset)
             .onChange(of: token) { _, _ in
                 runTransitionIfNeeded()
             }
@@ -41,8 +43,25 @@ struct SearchResultsTransitionContainer<Content: View>: View {
             : .easeOut(duration: 0.16)
     }
 
+    /// 搜索结果集变化时:先无动画地压到轻微下沉+降透明,
+    /// 下一个 runloop 再动画回落,形成一次短促的 settle 过渡。
     private func runTransitionIfNeeded() {
+        guard isActive else { return }
+
         transitionGeneration &+= 1
-        isSettlingContent = false
+        let generation = transitionGeneration
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            isSettlingContent = true
+        }
+
+        DispatchQueue.main.async {
+            guard generation == transitionGeneration else { return }
+            withAnimation(animation) {
+                isSettlingContent = false
+            }
+        }
     }
 }

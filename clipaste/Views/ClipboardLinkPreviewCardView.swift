@@ -129,7 +129,7 @@ private struct LinkPreviewTitleLine: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 7) {
-            LinkPreviewIcon(data: viewModel.iconData, size: iconSize)
+            LinkPreviewIcon(itemID: viewModel.itemID, hasIcon: viewModel.hasIcon, size: iconSize)
 
             HighlightedText(
                 text: viewModel.title,
@@ -150,10 +150,18 @@ private struct LinkPreviewTitleLine: View {
 }
 
 private struct LinkPreviewIcon: View {
-    let data: Data?
+    let itemID: UUID
+    let hasIcon: Bool
     let size: CGFloat
 
+    @State private var loadedImage: NSImage?
+
     var body: some View {
+        // 命中管线缓存时同帧渲染,只有真正的冷加载才异步补图;
+        // 解码结果缓存在 ClipboardImagePipeline,body 重算不再触碰 NSImage(data:)。
+        let image = loadedImage
+            ?? (hasIcon ? ClipboardImagePipeline.shared.cachedLinkIcon(for: itemID) : nil)
+
         Group {
             if let image {
                 Image(nsImage: image)
@@ -174,10 +182,13 @@ private struct LinkPreviewIcon: View {
             RoundedRectangle(cornerRadius: max(4, size * 0.22), style: .continuous)
                 .stroke(image == nil ? Color.primary.opacity(0.08) : Color.clear, lineWidth: 1)
         )
-    }
-
-    private var image: NSImage? {
-        guard let data else { return nil }
-        return NSImage(data: data)
+        .task(id: "\(itemID.uuidString)-\(hasIcon)") { @MainActor in
+            guard hasIcon, loadedImage == nil else { return }
+            guard ClipboardImagePipeline.shared.cachedLinkIcon(for: itemID) == nil else { return }
+            guard let icon = await ClipboardImagePipeline.shared.linkIcon(for: itemID) else { return }
+            withAnimation(.easeIn(duration: 0.15)) {
+                loadedImage = icon
+            }
+        }
     }
 }

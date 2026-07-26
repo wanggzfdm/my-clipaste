@@ -66,6 +66,67 @@ extension ClipboardItem {
             return nil
         }
 
+        // 拖到访达/桌面生成文件时的默认文件名。不设置时系统落名「未命名」。
+        // 本地文件拖拽(分支 1)保留原始文件名,不覆盖。
+        if contentType != .fileURL {
+            provider.suggestedName = dragSuggestedFileName
+        }
+
         return provider
+    }
+
+    /// 拖拽落盘文件名:自定义标题 > 链接标题 > 正文首行 > 类型默认名。
+    /// 给卡片改个标题(右键重命名),拖出去的文件就用这个名字。
+    var dragSuggestedFileName: String {
+        let candidates: [String?] = [
+            trimmedCustomTitle,
+            contentType == .image ? nil : linkTitle,
+            contentType == .image ? nil : (rawText ?? previewText)
+        ]
+
+        for candidate in candidates {
+            if let sanitized = Self.sanitizedFileName(from: candidate) {
+                return sanitized
+            }
+        }
+
+        let typeName: String
+        switch contentType {
+        case .image: typeName = String(localized: "Smart Filter Image")
+        case .link: typeName = String(localized: "Smart Filter Link")
+        case .code: typeName = String(localized: "Smart Filter Code")
+        case .color: typeName = String(localized: "Smart Filter Color")
+        case .fileURL, .text: typeName = String(localized: "Smart Filter Text")
+        }
+        return "\(typeName) \(timestamp.formatted(.dateTime.month().day().hour().minute()))"
+    }
+
+    private static func sanitizedFileName(from source: String?) -> String? {
+        guard let source else { return nil }
+
+        // 取首行,去掉文件系统敏感字符,限制长度。
+        let firstLine = source
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .newlines)
+            .first ?? ""
+
+        var sanitized = firstLine
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespaces)
+
+        // 纯 URL 落名时去掉协议前缀,避免整串协议字符做文件名。
+        for prefix in ["https://", "http://"] where sanitized.lowercased().hasPrefix(prefix) {
+            sanitized = String(sanitized.dropFirst(prefix.count))
+        }
+        sanitized = sanitized.trimmingCharacters(in: CharacterSet(charactersIn: "-. "))
+
+        guard sanitized.isEmpty == false else { return nil }
+
+        if sanitized.count > 60 {
+            sanitized = String(sanitized.prefix(60)).trimmingCharacters(in: .whitespaces)
+        }
+
+        return sanitized
     }
 }

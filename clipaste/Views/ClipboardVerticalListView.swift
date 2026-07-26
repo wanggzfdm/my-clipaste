@@ -139,12 +139,17 @@ struct ClipboardVerticalListView: View {
                     viewModel.deleteSelection(isCommandHeld: false)
                 }
                 .onAppear {
-                    scrollToPrimarySelection(with: proxy, animated: false)
+                    if !scrollToFirstSearchResultIfNeeded(with: proxy) {
+                        scrollToPrimarySelection(with: proxy, animated: false)
+                    }
                     previewPanelViewModel.handlePreviewModeChange(
                         items: items,
                         selectedItemIDs: viewModel.selectedItemIDs,
                         isPreviewEnabled: shouldAutoPreview
                     )
+                }
+                .onChange(of: viewModel.searchResultScrollGeneration) { _, _ in
+                    scrollToFirstSearchResultIfNeeded(with: proxy)
                 }
                 .onChange(of: viewModel.listScrollRequest) { _, request in
                     guard let request else { return }
@@ -176,6 +181,28 @@ struct ClipboardVerticalListView: View {
     }
 
     // MARK: - Scroll Management
+
+    /// 与横向布局对齐:搜索结果更新后把列表滚回首条匹配项。
+    @discardableResult
+    private func scrollToFirstSearchResultIfNeeded(with proxy: ScrollViewProxy) -> Bool {
+        guard let firstItemID = items.first?.id,
+              firstItemID == viewModel.searchResultScrollTargetID,
+              viewModel.handledSearchResultScrollGeneration != viewModel.searchResultScrollGeneration else {
+            return false
+        }
+
+        viewModel.handledSearchResultScrollGeneration = viewModel.searchResultScrollGeneration
+
+        DispatchQueue.main.async {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                proxy.scrollTo(firstItemID, anchor: .top)
+            }
+        }
+
+        return true
+    }
 
     private func scrollToPrimarySelection(with proxy: ScrollViewProxy, animated: Bool) {
         guard let selectedID = viewModel.lastSelectedID ?? viewModel.selectedItemIDs.first else { return }

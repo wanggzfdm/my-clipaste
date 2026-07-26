@@ -242,7 +242,7 @@ private extension ClipboardViewModel {
 
         let candidates = sourceItems
             .lazy
-            .filter { $0.isFastLink && ($0.linkTitle == nil || $0.linkIconData == nil) }
+            .filter { $0.isFastLink && ($0.linkTitle == nil || $0.hasLinkIcon == false) }
             .prefix(24)
 
         for item in candidates {
