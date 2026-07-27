@@ -41,6 +41,12 @@ extension ClipboardViewModel {
                 guard let self else { return }
                 let (allItems, groupId, filter, builtInGroup) = quadruple
 
+                // activateDisplayedScope 已同步刷新时，跳过同一次 scope 回声。
+                if self.suppressFilterPipelineEcho {
+                    self.activeSearchQuery = query
+                    return
+                }
+
                 // Background history pages already extend displayed IDs cheaply.
                 // Skip full refilter on every page merge to keep scrolling smooth
                 // (Paste-style: visible list stays stable while more data streams in).
@@ -55,6 +61,19 @@ extension ClipboardViewModel {
                 }
 
                 self.activeSearchQuery = query
+
+                // 搜索词变化：走 DB 分页，避免只在已加载窗口里搜。
+                if cleanQuery != self.pagination.activeQuery {
+                    if cleanQuery.isEmpty == false {
+                        self.beginSearchPagination(query: cleanQuery)
+                        return
+                    }
+                    if self.pagination.activeQuery.isEmpty == false {
+                        self.loadData(mode: .visibleFirst)
+                        return
+                    }
+                }
+
                 self.performAsyncFilter(
                     query: query,
                     items: allItems,
@@ -82,25 +101,36 @@ extension ClipboardViewModel {
         // 同步执行让标签高亮与卡片列表在同一帧切换;
         // 走后台双跳会插入至少两个 runloop 周期的空白帧,用户会看到"加载过程"。
         if cleanQuery.isEmpty {
-            let filteredIDs: [UUID]
             if groupId == nil && typeFilter == nil && builtInGroup == nil {
-                filteredIDs = items.map(\.id)
-            } else {
-                filteredIDs = items.compactMap { item -> UUID? in
-                    if let filter = typeFilter, item.contentType != filter {
-                        return nil
-                    }
-                    if let gid = groupId, item.groupIDs.contains(gid) == false {
-                        return nil
-                    }
-                    if let builtInGroup, builtInGroup.matches(item) == false {
-                        return nil
-                    }
-                    return item.id
+                // 「全部」：CoW 直通，禁止 map+全量 rematerialize
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    publishAllScopeDisplayedItems()
+                    reconcileSelectionAfterDisplayedItemsChange()
                 }
+                publishSearchScrollResetIfNeeded(query: cleanQuery)
+                return
             }
-            publishDisplayedItemIDs(filteredIDs)
-            reconcileSelectionAfterDisplayedItemsChange()
+
+            let filteredIDs = items.compactMap { item -> UUID? in
+                if let filter = typeFilter, item.contentType != filter {
+                    return nil
+                }
+                if let gid = groupId, item.groupIDs.contains(gid) == false {
+                    return nil
+                }
+                if let builtInGroup, builtInGroup.matches(item) == false {
+                    return nil
+                }
+                return item.id
+            }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                publishDisplayedItemIDs(filteredIDs)
+                reconcileSelectionAfterDisplayedItemsChange()
+            }
             publishSearchScrollResetIfNeeded(query: cleanQuery)
             return
         }
@@ -120,15 +150,13 @@ extension ClipboardViewModel {
                     return nil
                 }
 
-                if !cleanQuery.isEmpty {
-                    // Prefer preview-sized fields on the hot path; rawText can be huge.
-                    let searchable = item.searchableText ?? item.textPreview
-                    let matchesText = searchable.range(of: cleanQuery, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-                    let matchesApp = item.appName.range(of: cleanQuery, options: [.caseInsensitive]) != nil
+                // Prefer preview-sized fields on the hot path; rawText can be huge.
+                let searchable = item.searchableText ?? item.textPreview
+                let matchesText = searchable.range(of: cleanQuery, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+                let matchesApp = item.appName.range(of: cleanQuery, options: [.caseInsensitive]) != nil
 
-                    guard matchesText || matchesApp else {
-                        return nil
-                    }
+                guard matchesText || matchesApp else {
+                    return nil
                 }
 
                 return item.id
@@ -136,8 +164,12 @@ extension ClipboardViewModel {
 
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.filterGeneration == thisGeneration else { return }
-                self.publishDisplayedItemIDs(filteredIDs)
-                self.reconcileSelectionAfterDisplayedItemsChange()
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    self.publishDisplayedItemIDs(filteredIDs)
+                    self.reconcileSelectionAfterDisplayedItemsChange()
+                }
                 self.publishSearchScrollResetIfNeeded(query: cleanQuery)
             }
         }
@@ -147,7 +179,7 @@ extension ClipboardViewModel {
         guard query != lastSearchResultScrollQuery else { return }
 
         lastSearchResultScrollQuery = query
-        searchResultScrollTargetID = displayedItems.first?.id
+        searchResultScrollTargetID = displayedItemIDs.first
         searchResultScrollGeneration &+= 1
     }
 
@@ -157,94 +189,210 @@ extension ClipboardViewModel {
         historyLoadTask?.cancel()
         isBulkHistoryLoading = false
 
-        if items.isEmpty {
+        let pageSize = pagination.pageSize > 0 ? pagination.pageSize : Self.historyPageSize
+        pagination = HistoryPaginationState(
+            loadedCount: 0,
+            pageSize: pageSize,
+            hasMore: true,
+            isLoading: true,
+            generation: generation,
+            activeQuery: "",
+            scopeGroupId: nil,
+            scopeTypeRawValue: nil
+        )
+
+        // 内存有前缀但当前 scope 仍空时也要亮 loading，避免空托盘闪一下
+        if items.isEmpty || displayedItems.isEmpty {
             isInitialHistoryLoading = true
         }
 
         // 读路径的优先级反转由 StorageManager.detachedRead 统一兜底,
-        // 这里保持普通 MainActor Task 即可。
+        // 这里保持普通 MainActor Task 即可。仅拉首屏，不再 while 扫全库。
         historyLoadTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
 
             let firstPage = await StorageManager.shared.fetchItemsPage(
                 searchText: "",
-                fetchLimit: Self.initialVisibleItemBatchSize,
+                groupId: nil,
+                typeRawValue: nil,
+                fetchLimit: pageSize,
                 offset: 0
             )
 
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == self.dataLoadGeneration else { return }
+
             self.applyInitialHistoryPage(
                 firstPage,
                 generation: generation,
                 mode: mode
             )
+            self.syncPaginationAfterPage(
+                loadedCount: firstPage.count,
+                pageReceivedCount: firstPage.count,
+                pageSize: pageSize,
+                generation: generation
+            )
+        }
+    }
 
-            guard firstPage.count == Self.initialVisibleItemBatchSize else {
-                self.finishHistoryLoadingIfCurrent(generation: generation, loadedCount: firstPage.count)
-                return
+    /// 列表尾部可见时触发续页。由卡片 `onAppear` 调用。
+    @MainActor
+    func loadMoreIfNeeded(currentItemID: UUID) {
+        guard HistoryPaginationPolicy.shouldLoadMore(
+            currentID: currentItemID,
+            displayedIDs: displayedItemIDs,
+            state: pagination,
+            prefetchDistance: Self.loadMorePrefetchDistance
+        ) else { return }
+
+        let generation = dataLoadGeneration
+        guard generation == pagination.generation else { return }
+
+        let pageSize = pagination.pageSize > 0 ? pagination.pageSize : Self.historyPageSize
+        let offset = pagination.loadedCount
+        let query = pagination.activeQuery
+        let groupId = pagination.scopeGroupId
+        let typeRaw = pagination.scopeTypeRawValue
+
+        pagination.isLoading = true
+        isLoadingMoreHistory = true
+
+        historyLoadTask = Task(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+
+            let page = await StorageManager.shared.fetchItemsPage(
+                searchText: query,
+                groupId: groupId,
+                typeRawValue: typeRaw,
+                fetchLimit: pageSize,
+                offset: offset
+            )
+
+            guard !Task.isCancelled, generation == self.dataLoadGeneration else { return }
+
+            let newLoaded = offset + page.count
+            self.appendHistoryPage(page, generation: generation, loadedCount: newLoaded)
+            self.syncPaginationAfterPage(
+                loadedCount: newLoaded,
+                pageReceivedCount: page.count,
+                pageSize: pageSize,
+                generation: generation
+            )
+        }
+    }
+
+    /// 用 DB 搜索首屏替换展示列表（不依赖内存已加载窗口）。
+    @MainActor
+    func beginSearchPagination(query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else { return }
+
+        // 保留当前分组/类型 scope，搜索在 scope 内进行。
+        beginPagedFetch(
+            query: trimmed,
+            groupId: selectedGroupId,
+            typeRawValue: currentFilter?.rawValue,
+            replaceDisplayedWithPage: true
+        )
+    }
+
+    /// 切换用户分组 / 智能类型过滤时的 DB 首屏。
+    /// built-in 分组匹配逻辑较复杂，仍走内存 filter（依赖已加载窗口 + 续页全局 merge）。
+    @MainActor
+    func beginScopePagination(groupId: String?, typeRawValue: String?) {
+        beginPagedFetch(
+            query: activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines),
+            groupId: groupId,
+            typeRawValue: typeRawValue,
+            replaceDisplayedWithPage: true
+        )
+    }
+
+    @MainActor
+    private func beginPagedFetch(
+        query: String,
+        groupId: String?,
+        typeRawValue: String?,
+        replaceDisplayedWithPage: Bool
+    ) {
+        dataLoadGeneration &+= 1
+        let generation = dataLoadGeneration
+        historyLoadTask?.cancel()
+        isBulkHistoryLoading = false
+
+        let pageSize = pagination.pageSize > 0 ? pagination.pageSize : Self.historyPageSize
+        pagination = HistoryPaginationState(
+            loadedCount: 0,
+            pageSize: pageSize,
+            hasMore: true,
+            isLoading: true,
+            generation: generation,
+            activeQuery: query,
+            scopeGroupId: groupId,
+            scopeTypeRawValue: typeRawValue
+        )
+        isLoadingMoreHistory = true
+        if items.isEmpty || displayedItems.isEmpty {
+            isInitialHistoryLoading = true
+        }
+
+        historyLoadTask = Task(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+
+            let page = await StorageManager.shared.fetchItemsPage(
+                searchText: query,
+                groupId: groupId,
+                typeRawValue: typeRawValue,
+                fetchLimit: pageSize,
+                offset: 0
+            )
+
+            guard !Task.isCancelled, generation == self.dataLoadGeneration else { return }
+
+            if replaceDisplayedWithPage {
+                self.mergeItems(page, prepend: true, enqueueLinkMetadata: false)
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    self.publishDisplayedItemIDs(page.map(\.id))
+                    self.reconcileSelectionAfterDisplayedItemsChange()
+                }
+                if query.isEmpty == false {
+                    self.publishSearchScrollResetIfNeeded(query: query)
+                }
+            } else {
+                self.applyInitialHistoryPage(page, generation: generation, mode: .visibleFirst)
             }
+            self.syncPaginationAfterPage(
+                loadedCount: page.count,
+                pageReceivedCount: page.count,
+                pageSize: pageSize,
+                generation: generation
+            )
+        }
+    }
 
-            // Background pages: coalesce UI commits so scrolling is not interrupted
-            // by a full list rebuild every 160 rows (Paste-style streaming).
-            self.isBulkHistoryLoading = true
-            var offset = firstPage.count
-            var totalLoaded = firstPage.count
-            var pendingBackgroundItems: [ClipboardItem] = []
-            pendingBackgroundItems.reserveCapacity(Self.backgroundPageBatchSize * 2)
-            let coalesceTarget = Self.backgroundPageBatchSize * 2
+    /// 用本页实际条数更新 hasMore / 完成态。
+    @MainActor
+    private func syncPaginationAfterPage(
+        loadedCount: Int,
+        pageReceivedCount: Int,
+        pageSize: Int,
+        generation: UInt
+    ) {
+        guard generation == dataLoadGeneration else { return }
 
-            while !Task.isCancelled {
-                let page = await StorageManager.shared.fetchItemsPage(
-                    searchText: "",
-                    fetchLimit: Self.backgroundPageBatchSize,
-                    offset: offset
-                )
+        pagination.loadedCount = loadedCount
+        pagination.hasMore = pageReceivedCount == pageSize && pageReceivedCount > 0
+        pagination.isLoading = false
+        isLoadingMoreHistory = false
+        isInitialHistoryLoading = false
+        isBulkHistoryLoading = false
+        loadedHistoryCount = items.count
+        hasLoadedFullHistory = pagination.hasMore == false
 
-                guard !Task.isCancelled else {
-                    self.isBulkHistoryLoading = false
-                    return
-                }
-
-                if page.isEmpty {
-                    if !pendingBackgroundItems.isEmpty {
-                        self.appendHistoryPage(
-                            pendingBackgroundItems,
-                            generation: generation,
-                            loadedCount: totalLoaded
-                        )
-                        pendingBackgroundItems.removeAll(keepingCapacity: true)
-                    }
-                    self.finishHistoryLoadingIfCurrent(generation: generation, loadedCount: totalLoaded)
-                    return
-                }
-
-                totalLoaded += page.count
-                offset += page.count
-                pendingBackgroundItems.append(contentsOf: page)
-
-                let shouldFlush =
-                    pendingBackgroundItems.count >= coalesceTarget
-                    || page.count < Self.backgroundPageBatchSize
-
-                if shouldFlush {
-                    self.appendHistoryPage(
-                        pendingBackgroundItems,
-                        generation: generation,
-                        loadedCount: totalLoaded
-                    )
-                    pendingBackgroundItems.removeAll(keepingCapacity: true)
-
-                    // Yield a frame so Lazy* stacks can keep scrolling fluid.
-                    try? await Task.sleep(nanoseconds: 8_000_000)
-                }
-
-                if page.count < Self.backgroundPageBatchSize {
-                    self.finishHistoryLoadingIfCurrent(generation: generation, loadedCount: totalLoaded)
-                    return
-                }
-            }
-
-            self.isBulkHistoryLoading = false
+        if hasLoadedFullHistory {
+            finishHistoryLoadingIfCurrent(generation: generation, loadedCount: loadedCount)
         }
     }
 
@@ -291,14 +439,18 @@ extension ClipboardViewModel {
         }
 
         isInitialHistoryLoading = false
-        isLoadingMoreHistory = pageItems.count == Self.initialVisibleItemBatchSize
+        isLoadingMoreHistory = false
         loadedHistoryCount = items.count
-        hasLoadedFullHistory = pageItems.count < Self.initialVisibleItemBatchSize
+        // hasLoadedFullHistory / pagination 由 syncPaginationAfterPage 统一写入
     }
 
     @MainActor
     func appendHistoryPage(_ pageItems: [ClipboardItem], generation: UInt, loadedCount: Int) {
         guard generation == dataLoadGeneration else { return }
+        guard pageItems.isEmpty == false else {
+            loadedHistoryCount = loadedCount
+            return
+        }
 
         // Skip link-metadata thrash during bulk stream; first visible page already enqueued.
         mergeItems(pageItems, prepend: false, enqueueLinkMetadata: false)
@@ -323,7 +475,6 @@ extension ClipboardViewModel {
         }
 
         isInitialHistoryLoading = false
-        isLoadingMoreHistory = true
         loadedHistoryCount = loadedCount
     }
 
@@ -335,6 +486,9 @@ extension ClipboardViewModel {
         isLoadingMoreHistory = false
         loadedHistoryCount = loadedCount
         hasLoadedFullHistory = true
+        pagination.hasMore = false
+        pagination.isLoading = false
+        pagination.loadedCount = loadedCount
 
         // One final scope sync in case filters changed mid-load.
         if activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false

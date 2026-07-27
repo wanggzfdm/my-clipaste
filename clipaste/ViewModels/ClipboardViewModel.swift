@@ -19,6 +19,15 @@ enum UnifiedGroupSlot: Equatable {
     case userGroup(String)
 }
 
+/// 面板关闭时缓存的当前 scope 首屏，重开时优先恢复，避免分组列表先空后闪。
+struct PanelScopeSnapshot {
+    let filter: ClipboardContentType?
+    let builtInGroup: ClipboardBuiltInGroup?
+    let groupID: String?
+    let items: [ClipboardItem]
+    let displayedIDs: [UUID]
+}
+
 extension UserDefaults {
     @objc dynamic var enable_smart_groups: Bool {
         bool(forKey: "enable_smart_groups")
@@ -32,8 +41,15 @@ final class ClipboardViewModel: ObservableObject {
         case fullRefresh
     }
 
-    static let initialVisibleItemBatchSize = 80
-    static let backgroundPageBatchSize = 160
+    /// 首屏 / 续页统一 page size（真·按需分页，不再后台 while 扫全库）。
+    static let historyPageSize = 64
+    static let initialVisibleItemBatchSize = historyPageSize
+    static let backgroundPageBatchSize = historyPageSize
+    /// 距列表尾部多少条内触发 loadMore。
+    static let loadMorePrefetchDistance = 8
+    /// 首屏物化窗口：超过此数量时先提交窗口，再分帧补齐，避免切到「全部」时主线程一次拷贝上千 struct。
+    static let displayMaterializeWindowSize = 100
+    static let displayMaterializeChunkSize = 200
 
     struct QuickLookImagePreviewState {
         let image: NSImage
@@ -107,6 +123,8 @@ final class ClipboardViewModel: ObservableObject {
     var historyLoadTask: Task<Void, Never>? = nil
     /// Suppresses intermediate filter/UI churn while background pages merge.
     var isBulkHistoryLoading = false
+    /// 真·按需分页游标（打开态不自动灌满全库）。
+    var pagination = HistoryPaginationState(pageSize: historyPageSize)
     var itemIndexByID: [UUID: Int] = [:]
     var itemIndexByHash: [String: Int] = [:]
     var pendingLinkMetadataHashes: Set<String> = []
@@ -118,6 +136,13 @@ final class ClipboardViewModel: ObservableObject {
     /// When true, passive list mutations (optimistic capture / DB reconcile) suppress SwiftUI animations.
     var isSilentPresentationMutation = false
     var silentPresentationEndTask: Task<Void, Never>? = nil
+    /// activateDisplayedScope 已同步刷新时，吞掉 Combine pipeline 的同一次回声。
+    var suppressFilterPipelineEcho = false
+    /// 分帧物化 generation，避免过期补齐覆盖新的 scope。
+    var displayMaterializeGeneration: UInt = 0
+    var displayMaterializeTask: Task<Void, Never>? = nil
+    /// 关面板时保留的当前 scope 首屏，重开分组时避免空白。
+    var lastScopeSnapshot: PanelScopeSnapshot? = nil
     let settingsViewModel: SettingsViewModel
     let aiSettingsViewModel: AISettingsViewModel
 
@@ -163,6 +188,7 @@ final class ClipboardViewModel: ObservableObject {
     deinit {
         operationNoticeHideTask?.cancel()
         silentPresentationEndTask?.cancel()
+        displayMaterializeTask?.cancel()
         autoPreviewTask?.cancel()
         pendingRecordChangeFlushTask?.cancel()
         if let keyDownMonitor {

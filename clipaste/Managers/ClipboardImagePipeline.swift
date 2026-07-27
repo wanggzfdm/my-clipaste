@@ -1,6 +1,36 @@
 import AppKit
 import Foundation
 
+/// 限制同时进行的缩略图解码数量，避免横滑时 IO/CPU 打满。
+private actor PipelineConcurrencyGate {
+    private let limit: Int
+    private var running = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) {
+        self.limit = max(limit, 1)
+    }
+
+    func acquire() async {
+        if running < limit {
+            running += 1
+            return
+        }
+        await withCheckedContinuation { cont in
+            waiters.append(cont)
+        }
+    }
+
+    func release() {
+        if let next = waiters.first {
+            waiters.removeFirst()
+            next.resume()
+            return
+        }
+        running = max(running - 1, 0)
+    }
+}
+
 @MainActor
 final class ClipboardImagePipeline {
     static let shared = ClipboardImagePipeline()
@@ -16,6 +46,7 @@ final class ClipboardImagePipeline {
     private let cache = NSCache<NSString, NSImage>()
 
     private var loadingTasks: [String: Task<NSImage?, Never>] = [:]
+    private let decodeGate = PipelineConcurrencyGate(limit: 4)
 
     private init() {
         cache.countLimit = 256
@@ -57,8 +88,14 @@ final class ClipboardImagePipeline {
             return await existingTask.value
         }
 
-        // 创建新的加载任务
-        let task = Task { await loadTask() }
+        // 创建新的加载任务（经全局限流，最多 4 路真正解码）
+        let gate = decodeGate
+        let task = Task {
+            await gate.acquire()
+            let image = await loadTask()
+            await gate.release()
+            return image
+        }
         loadingTasks[cacheKey] = task
 
         defer {

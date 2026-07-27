@@ -90,30 +90,38 @@ struct ClipboardVerticalListView: View {
             GeometryReader { viewportProxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(spacing: itemSpacing) {
-                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                            ClipboardVerticalItemView(
-                                item: item,
-                                viewModel: viewModel,
-                                quickPasteIndex: quickPasteIndexesByItemID[item.id],
-                                usesPreviewPanel: isPreviewEnabled,
-                                allowsAutoPreview: clipboardLayout == .vertical,
-                                onHoverChange: { isHovering in
-                                    previewPanelViewModel.handleHoverChange(
-                                        for: item,
-                                        isHovering: isHovering,
-                                        items: items,
-                                        selectedItemIDs: viewModel.selectedItemIDs,
-                                        isPreviewEnabled: shouldAutoPreview
-                                    )
-                                }
-                            )
-                                .id(item.id)
+                        let indexByID: [UUID: Int] = Dictionary(
+                            uniqueKeysWithValues: viewModel.displayedItemIDs.enumerated().map { ($0.element, $0.offset) }
+                        )
+                        ForEach(viewModel.displayedItemIDs, id: \.self) { id in
+                            if let item = viewModel.item(for: id) {
+                                ClipboardVerticalItemView(
+                                    item: item,
+                                    viewModel: viewModel,
+                                    quickPasteIndex: quickPasteIndexesByItemID[id],
+                                    usesPreviewPanel: isPreviewEnabled,
+                                    allowsAutoPreview: clipboardLayout == .vertical,
+                                    onHoverChange: { isHovering in
+                                        previewPanelViewModel.handleHoverChange(
+                                            for: item,
+                                            isHovering: isHovering,
+                                            items: items,
+                                            selectedItemIDs: viewModel.selectedItemIDs,
+                                            isPreviewEnabled: shouldAutoPreview
+                                        )
+                                    }
+                                )
+                                .id(id)
                                 .clipboardQuickPasteVisibleFrame(
-                                    id: item.id,
-                                    sourceIndex: index,
+                                    id: id,
+                                    sourceIndex: indexByID[id] ?? 0,
                                     coordinateSpaceName: quickPasteCoordinateSpaceName,
                                     isTrackingEnabled: viewModel.isQuickPasteModifierHeld
                                 )
+                                .onAppear {
+                                    viewModel.loadMoreIfNeeded(currentItemID: id)
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, horizontalPadding)
@@ -173,7 +181,7 @@ struct ClipboardVerticalListView: View {
             frames: frames,
             viewportSize: viewportSize,
             axis: .vertical,
-            itemIDsInDisplayOrder: items.map(\.id)
+            itemIDsInDisplayOrder: viewModel.displayedItemIDs
         )
 
         guard resolvedIndexes != quickPasteIndexesByItemID else { return }

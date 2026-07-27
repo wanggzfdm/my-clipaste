@@ -16,22 +16,32 @@ struct ClipboardHorizontalView: View {
             GeometryReader { viewportProxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 20) {
-                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                            ClipboardCardView(
-                                item: item,
-                                viewModel: viewModel,
-                                quickPasteIndex: quickPasteIndexesByItemID[item.id]
-                            )
-                            .id(item.id)
-                            .contentShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
-                            .help(pasteHelpText)
-                            .clipboardQuickPasteVisibleFrame(
-                                id: item.id,
-                                sourceIndex: index,
-                                coordinateSpaceName: quickPasteCoordinateSpaceName,
-                                // Skip Preference fan-out while flinging — major LazyHStack cost.
-                                isTrackingEnabled: viewModel.isQuickPasteModifierHeld && !isListScrolling
-                            )
+                        // ID 驱动 ForEach：避免 enumerated 全表临时数组；sourceIndex 用 O(n) 字典一次构建。
+                        let indexByID: [UUID: Int] = Dictionary(
+                            uniqueKeysWithValues: viewModel.displayedItemIDs.enumerated().map { ($0.element, $0.offset) }
+                        )
+                        ForEach(viewModel.displayedItemIDs, id: \.self) { id in
+                            if let item = viewModel.item(for: id) {
+                                ClipboardCardView(
+                                    item: item,
+                                    viewModel: viewModel,
+                                    quickPasteIndex: quickPasteIndexesByItemID[id],
+                                    isListScrolling: isListScrolling
+                                )
+                                .id(id)
+                                .contentShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
+                                .help(pasteHelpText)
+                                .clipboardQuickPasteVisibleFrame(
+                                    id: id,
+                                    sourceIndex: indexByID[id] ?? 0,
+                                    coordinateSpaceName: quickPasteCoordinateSpaceName,
+                                    // Skip Preference fan-out while flinging — major LazyHStack cost.
+                                    isTrackingEnabled: viewModel.isQuickPasteModifierHeld && !isListScrolling
+                                )
+                                .onAppear {
+                                    viewModel.loadMoreIfNeeded(currentItemID: id)
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, 33)
@@ -121,7 +131,7 @@ struct ClipboardHorizontalView: View {
             frames: frames,
             viewportSize: viewportSize,
             axis: .horizontal,
-            itemIDsInDisplayOrder: items.map(\.id)
+            itemIDsInDisplayOrder: viewModel.displayedItemIDs
         )
 
         guard resolvedIndexes != quickPasteIndexesByItemID else { return }
@@ -135,7 +145,7 @@ struct ClipboardHorizontalView: View {
 
     @discardableResult
     private func scrollToFirstSearchResultIfNeeded(with proxy: ScrollViewProxy) -> Bool {
-        guard let firstItemID = items.first?.id,
+        guard let firstItemID = viewModel.displayedItemIDs.first,
               firstItemID == viewModel.searchResultScrollTargetID,
               viewModel.handledSearchResultScrollGeneration != viewModel.searchResultScrollGeneration else {
             return false

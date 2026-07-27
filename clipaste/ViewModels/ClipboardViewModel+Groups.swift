@@ -232,10 +232,38 @@ private extension ClipboardViewModel {
         selectedBuiltInGroup = builtInGroup
         selectedGroupId = groupID
 
-        // 同帧刷新:不等 Combine 管线的订阅调度,让标签高亮与卡片列表同时切换。
-        // 管线随后仍会触发一次 performAsyncFilter,结果幂等,
-        // rematerializeDisplayedItems 的差异比较会吞掉重复发布。
-        refreshDisplayedItemsFromCurrentScope()
-        reconcileSelectionAfterDisplayedItemsChange()
+        // 同帧刷新 + 静默 transaction：避免 Empty/List 切换与 ForEach 插入动画造成闪烁。
+        // 同时 bump filterGeneration 并短暂 suppress pipeline，吞掉 Combine 对同一次 scope 变更的二次 rematerialize。
+        filterGeneration &+= 1
+        suppressFilterPipelineEcho = true
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            refreshDisplayedItemsFromCurrentScope()
+            reconcileSelectionAfterDisplayedItemsChange()
+        }
+
+        // 用户分组 / 类型过滤：DB 首屏，避免只显示内存窗口内的命中。
+        // built-in 仍用内存 filter（匹配规则复杂）。
+        if builtInGroup == nil, groupID != nil || filter != nil {
+            beginScopePagination(groupId: groupID, typeRawValue: filter?.rawValue)
+        } else if groupID == nil, filter == nil, builtInGroup == nil {
+            // 回到「全部」：重置为无 scope 的按需分页首屏（若当前仍是搜索则 beginSearch 路径由 pipeline 处理）。
+            let q = activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+            if q.isEmpty {
+                loadData(mode: .visibleFirst)
+            } else {
+                beginSearchPagination(query: q)
+            }
+        } else if displayedItems.isEmpty, hasLoadedFullHistory == false {
+            // built-in 且内存无命中：亮 loading，并尝试多拉几页全局数据（loadMore 由列表触发）
+            isInitialHistoryLoading = true
+        }
+
+        // 下一 runloop 再放开 pipeline，避免同一次 CombineLatest 回声
+        DispatchQueue.main.async { [weak self] in
+            self?.suppressFilterPipelineEcho = false
+        }
     }
 }

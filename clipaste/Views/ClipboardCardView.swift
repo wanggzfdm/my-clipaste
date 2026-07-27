@@ -5,6 +5,8 @@ struct ClipboardCardView: View {
     let item: ClipboardItem
     @ObservedObject var viewModel: ClipboardViewModel
     var quickPasteIndex: Int? = nil
+    /// 横滑 fling 时由列表传入，用于抑制 RTF 新任务与次要装饰。
+    var isListScrolling: Bool = false
     
     @Environment(\.shouldDisableAnimations) private var shouldDisableAnimations
     @Environment(\.colorScheme) private var colorScheme
@@ -463,6 +465,7 @@ struct ClipboardCardView: View {
     private var showsAIShortcut: Bool {
         // Hide during fling — menu + material capsule is unnecessary mid-scroll work.
         !shouldDisableAnimations
+            && !isListScrolling
             && viewModel.aiSettingsViewModel.isAIEnabled
             && (isHovered || isSelected)
             && viewModel.isQuickPasteModifierHeld == false
@@ -482,9 +485,18 @@ struct ClipboardCardView: View {
             return
         }
 
+        // 滚动中只吃缓存：不发起新的 RTF 读库/排版，避免 fling 打满 IO。
+        if shouldDisableAnimations || isListScrolling {
+            return
+        }
+
         // Longer settle window while user is flinging the list (Paste-style plain preview first).
         try? await Task.sleep(nanoseconds: 180_000_000)
         guard !Task.isCancelled else {
+            return
+        }
+        // 二次确认仍未在滚
+        if shouldDisableAnimations || isListScrolling {
             return
         }
 

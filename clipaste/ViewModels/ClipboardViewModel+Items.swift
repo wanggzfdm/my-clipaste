@@ -11,20 +11,105 @@ extension ClipboardViewModel {
     }
 
     func publishDisplayedItemIDs(_ ids: [UUID]) {
+        // 与当前 IDs 完全一致则跳过（避免切回「全部」时无意义的二次发布）
+        if ids.count == displayedItemIDs.count,
+           ids.isEmpty || (ids.first == displayedItemIDs.first && ids.last == displayedItemIDs.last),
+           zip(ids, displayedItemIDs).allSatisfy({ $0 == $1 }) {
+            // IDs 没变，但 items 内容可能变了：尝试 CoW / 轻量刷新
+            rematerializeDisplayedItems()
+            return
+        }
         displayedItemIDs = ids
         rematerializeDisplayedItems()
     }
 
+    /// 将 displayedItemIDs 物化为 displayedItems。
+    /// 「全部」且 ID 与 items 同序时走 Array CoW（O(1)），绝不 compactMap 拷贝 NSImage。
     func rematerializeDisplayedItems() {
-        let materialised = displayedItemIDs.compactMap { id -> ClipboardItem? in
+        displayMaterializeTask?.cancel()
+        displayMaterializeGeneration &+= 1
+        let generation = displayMaterializeGeneration
+        let ids = displayedItemIDs
+
+        // —— 快路径 1：全部 scope，ID 与 items 一一对应 → CoW 共享底层 buffer
+        if isAllScopeIdentity(ids) {
+            // Array CoW：赋值几乎免费，直到某一方 mutate 才复制
+            if !isDisplayedItemsCoWAligned(with: items) {
+                displayedItems = items
+            }
+            return
+        }
+
+        // —— 快路径 2：已物化且 ID 序列一致 → 不整表重建（避免 NSImage Hashable 比较）
+        if ids.count == displayedItems.count,
+           zip(ids, displayedItems).allSatisfy({ $0.0 == $0.1.id }) {
+            return
+        }
+
+        let windowSize = Self.displayMaterializeWindowSize
+
+        // 小列表：一次物化
+        if ids.count <= windowSize {
+            let materialised = materializeItems(for: ids)
+            displayedItems = materialised
+            return
+        }
+
+        // 大过滤列表：只物化首窗，不再分帧追加整表。
+        // 滚动/键盘用 displayedItemIDs + item(for:)；视图层 ForEach 也走 ID。
+        // 分帧追加曾导致「全部」切换后持续卡顿（每次 @Published 大数组赋值）。
+        let firstWindow = materializeItems(for: ids.prefix(windowSize))
+        displayedItems = firstWindow
+        _ = generation // 保留 generation 语义，取消旧 task 即可
+    }
+
+    /// 「全部」专用：直接共享 items，避免 map+compactMap。
+    func publishAllScopeDisplayedItems() {
+        displayMaterializeTask?.cancel()
+        displayMaterializeGeneration &+= 1
+
+        let ids: [UUID]
+        // 若 displayedItemIDs 已是 items 的完整 ID 序列，复用，省一次 map
+        if isAllScopeIdentity(displayedItemIDs), displayedItemIDs.count == items.count {
+            ids = displayedItemIDs
+        } else {
+            ids = items.map(\.id)
+        }
+
+        displayedItemIDs = ids
+        // CoW O(1)
+        if !isDisplayedItemsCoWAligned(with: items) {
+            displayedItems = items
+        }
+    }
+
+    private func materializeItems<S: Sequence>(for idSequence: S) -> [ClipboardItem] where S.Element == UUID {
+        idSequence.compactMap { id -> ClipboardItem? in
             guard let index = itemIndexByID[id], items.indices.contains(index) else {
                 return nil
             }
             return items[index]
         }
-        if materialised != displayedItems {
-            displayedItems = materialised
+    }
+
+    /// displayedItemIDs 是否表示「未过滤的全部 items」同序视图。
+    private func isAllScopeIdentity(_ ids: [UUID]) -> Bool {
+        guard ids.count == items.count, !items.isEmpty else {
+            return ids.isEmpty && items.isEmpty
         }
+        // 抽样 + 两端，避免每次 zip 全表（仍正确的概率极高；全表 UUID 对比在 1 万级也可接受）
+        if ids.first != items.first?.id || ids.last != items.last?.id {
+            return false
+        }
+        // 完整校验：UUID 对比很便宜，远低于拷贝 ClipboardItem
+        return zip(ids, items).allSatisfy { $0.0 == $0.1.id }
+    }
+
+    /// 粗判 displayedItems 是否已与 items CoW 对齐（同长度、同首尾 id）。
+    private func isDisplayedItemsCoWAligned(with source: [ClipboardItem]) -> Bool {
+        displayedItems.count == source.count
+            && displayedItems.first?.id == source.first?.id
+            && displayedItems.last?.id == source.last?.id
     }
 
     @discardableResult
@@ -63,6 +148,12 @@ extension ClipboardViewModel {
 
         items.removeAll { ids.contains($0.id) }
         rebuildItemIndexes()
+        pagination.loadedCount = items.count
+        if items.isEmpty {
+            pagination.hasMore = false
+            hasLoadedFullHistory = true
+        }
+        loadedHistoryCount = items.count
         refreshDisplayedItemsFromCurrentScope()
     }
 
@@ -73,6 +164,12 @@ extension ClipboardViewModel {
 
         items.remove(at: index)
         rebuildItemIndexes()
+        pagination.loadedCount = items.count
+        if items.isEmpty {
+            pagination.hasMore = false
+            hasLoadedFullHistory = true
+        }
+        loadedHistoryCount = items.count
         refreshDisplayedItemsFromCurrentScope()
     }
 
@@ -162,18 +259,26 @@ extension ClipboardViewModel {
     func refreshDisplayedItemsFromCurrentScope() {
         let query = activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // 「全部」且无搜索：CoW 直通，这是切到全部卡顿的主修复
+        if query.isEmpty,
+           currentFilter == nil,
+           selectedBuiltInGroup == nil,
+           selectedGroupId == nil {
+            publishAllScopeDisplayedItems()
+            return
+        }
+
         let ids = items.compactMap { item -> UUID? in
             guard matchesCurrentDisplayScope(item, query: query) else {
                 return nil
             }
-
             return item.id
         }
         publishDisplayedItemIDs(ids)
     }
 }
 
-private extension ClipboardViewModel {
+extension ClipboardViewModel {
     func rebuildItemIndexes() {
         var idIndex: [UUID: Int] = [:]
         var hashIndex: [String: Int] = [:]

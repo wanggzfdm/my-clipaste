@@ -77,42 +77,73 @@ nonisolated private func encodedGroupIDs(_ groupIDs: [String]) -> String? {
 
 @ModelActor
 actor ClipboardSearcher {
-    func searchAndMap(searchText: String, fetchLimit: Int? = nil, offset: Int = 0) async -> [ClipboardItem] {
+    func searchAndMap(
+        searchText: String,
+        groupId: String? = nil,
+        typeRawValue: String? = nil,
+        fetchLimit: Int? = nil,
+        offset: Int = 0
+    ) async -> [ClipboardItem] {
         let query = searchText
-        var descriptor: FetchDescriptor<ClipboardRecord>
+        let scopedGroupId = groupId
+        let scopedType = typeRawValue
 
-        if query.isEmpty {
+        // 只在 DB 侧施加单一主谓词，避免 #Predicate 组合式过深导致编译器超时。
+        // 其余条件在映射后内存过滤（page 再放大一点补偿）。
+        var descriptor: FetchDescriptor<ClipboardRecord>
+        let needsPostFilter = (scopedGroupId != nil && scopedType != nil)
+            || (query.isEmpty == false && (scopedGroupId != nil || scopedType != nil))
+
+        if let gid = scopedGroupId {
             descriptor = FetchDescriptor<ClipboardRecord>(
+                predicate: #Predicate<ClipboardRecord> { record in
+                    record.groupId == gid || (record.groupIdsRaw?.contains(gid) == true)
+                },
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+        } else if let type = scopedType {
+            descriptor = FetchDescriptor<ClipboardRecord>(
+                predicate: #Predicate<ClipboardRecord> { record in
+                    record.typeRawValue == type
+                },
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+        } else if query.isEmpty == false {
+            descriptor = FetchDescriptor<ClipboardRecord>(
+                predicate: #Predicate<ClipboardRecord> { record in
+                    (record.plainText?.localizedStandardContains(query) == true) ||
+                    (record.appLocalizedName?.localizedStandardContains(query) == true)
+                },
                 sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
             )
         } else {
-            let predicate = #Predicate<ClipboardRecord> { record in
-                (record.plainText?.localizedStandardContains(query) == true) ||
-                (record.appLocalizedName?.localizedStandardContains(query) == true)
-            }
-
             descriptor = FetchDescriptor<ClipboardRecord>(
-                predicate: predicate,
                 sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
             )
         }
 
-        if let fetchLimit, fetchLimit > 0 {
-            descriptor.fetchLimit = fetchLimit
-        }
-
-        if offset > 0 {
-            descriptor.fetchOffset = offset
+        // 需要二次过滤时多取一些，再在内存裁到 limit；无二次过滤则精确 LIMIT/OFFSET。
+        if needsPostFilter {
+            let baseLimit = max(fetchLimit ?? 64, 64)
+            descriptor.fetchLimit = baseLimit * 4 + offset
+            // offset 在内存侧处理
+        } else {
+            if let fetchLimit, fetchLimit > 0 {
+                descriptor.fetchLimit = fetchLimit
+            }
+            if offset > 0 {
+                descriptor.fetchOffset = offset
+            }
         }
 
         let records = (try? modelContext.fetch(descriptor)) ?? []
-        let snapshots = records.map { record in
+        var items = records.map { record -> ClipboardItem in
             let truncatedText: String? = {
                 guard let text = record.plainText else { return nil }
                 return text.count > 500 ? String(text.prefix(500)) : text
             }()
 
-            return ClipboardRecordSnapshot(
+            let snapshot = ClipboardRecordSnapshot(
                 id: record.id,
                 contentHash: record.contentHash,
                 bundleIdentifier: record.appBundleID,
@@ -138,9 +169,38 @@ actor ClipboardSearcher {
                 captureMethodRawValue: record.captureMethodRawValue,
                 captureSessionID: record.captureSessionID
             )
+            return StorageManager.makeClipboardItem(from: snapshot)
         }
 
-        return snapshots.map { StorageManager.makeClipboardItem(from: $0) }
+        if let type = scopedType {
+            items = items.filter { $0.contentType.rawValue == type }
+        }
+        if let gid = scopedGroupId {
+            items = items.filter { $0.groupIDs.contains(gid) }
+        }
+        if query.isEmpty == false {
+            items = items.filter { item in
+                let searchable = item.searchableText ?? item.textPreview
+                let matchesText = searchable.range(
+                    of: query,
+                    options: [.caseInsensitive, .diacriticInsensitive]
+                ) != nil
+                let matchesApp = item.appName.range(of: query, options: [.caseInsensitive]) != nil
+                return matchesText || matchesApp
+            }
+        }
+
+        if needsPostFilter {
+            let limit = fetchLimit ?? items.count
+            let start = min(offset, items.count)
+            let end = min(start + limit, items.count)
+            if start < end {
+                return Array(items[start..<end])
+            }
+            return []
+        }
+
+        return items
     }
 }
 
@@ -198,13 +258,21 @@ final class StorageManager {
     nonisolated
     func fetchItemsPage(
         searchText: String,
+        groupId: String? = nil,
+        typeRawValue: String? = nil,
         fetchLimit: Int,
         offset: Int = 0
     ) async -> [ClipboardItem] {
         let container = self.container
         return await detachedRead {
             let searcher = ClipboardSearcher(modelContainer: container)
-            return await searcher.searchAndMap(searchText: searchText, fetchLimit: fetchLimit, offset: offset)
+            return await searcher.searchAndMap(
+                searchText: searchText,
+                groupId: groupId,
+                typeRawValue: typeRawValue,
+                fetchLimit: fetchLimit,
+                offset: offset
+            )
         }
     }
 
