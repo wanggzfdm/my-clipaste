@@ -7,11 +7,13 @@ extension ClipboardViewModel {
         let wasAlreadyActive = isPanelPresentationActive
         isPanelPresentationActive = true
 
-        // Only reset search on the initial presentation, not when regaining focus
+        // Only reset search / group on the initial presentation, not when regaining focus
         // while already active. This preserves search state when the panel
         // regains focus during an active search.
         if wasAlreadyActive == false {
             resetSearchForPresentationIfNeeded()
+            // 每次打开都回到第一个分组（全部），避免停在「组件」等 scope 导致切回全部时首屏不是最新。
+            resetToDefaultGroupForPresentation()
         }
 
         guard wasAlreadyActive == false else { return }
@@ -22,14 +24,19 @@ extension ClipboardViewModel {
             return
         }
 
-        guard needsReloadOnNextPresentation else { return }
+        guard needsReloadOnNextPresentation else {
+            // 即使不需要整表重载，也确保展示的是「全部」首屏并从最新选中。
+            ensureDefaultGroupDisplayedForPresentation()
+            shouldResetSelectionToFirstDisplayedItem = true
+            return
+        }
         needsReloadOnNextPresentation = false
 
-        // 已有 scope 快照/当前 displayed 时：先画再静默 visibleFirst 合并，避免重开空白。
+        // 默认分组下：先画再静默 visibleFirst 合并，避免重开空白。
         if displayedItems.isEmpty, items.isEmpty {
             isInitialHistoryLoading = true
         }
-        shouldResetSelectionToFirstDisplayedItem = displayedItems.isEmpty
+        shouldResetSelectionToFirstDisplayedItem = true
         loadData(mode: displayedItems.isEmpty ? .fullRefresh : .visibleFirst)
         loadCustomGroups()
     }
@@ -45,16 +52,28 @@ extension ClipboardViewModel {
 
     /// Synchronously primes list content for the panel open hot path.
     /// Prefer warm cache / already-loaded items so `showPanel` can order front immediately.
+    /// Synchronously primes list content for the panel open hot path.
+    /// Prefer warm cache / already-loaded items so `showPanel` can order front immediately.
     func primePanelContentForImmediatePresentation() {
-        // 优先恢复上次关闭时的 scope 快照（含自定义分组）
-        restoreScopeSnapshotIfPossible()
+        // 打开即切回「全部」，再恢复/灌缓存，保证首屏按时间倒序从最新开始。
+        resetToDefaultGroupForPresentation()
+
+        // 仅恢复「全部」scope 快照；其它分组快照会让首屏停在旧子集上。
+        if isAllScopeSnapshot(lastScopeSnapshot) {
+            _ = restoreScopeSnapshotIfPossible()
+        } else {
+            lastScopeSnapshot = nil
+        }
+
         preparePanelDataIfNeeded()
         if items.isEmpty || displayedItems.isEmpty {
             hydrateFromWarmCacheIfAvailable()
         }
+        ensureDefaultGroupDisplayedForPresentation()
         if displayedItems.isEmpty, hasLoadedFullHistory == false {
             isInitialHistoryLoading = true
         }
+        shouldResetSelectionToFirstDisplayedItem = true
     }
 
     /// Background reconcile after the panel is already visible.
@@ -125,14 +144,24 @@ extension ClipboardViewModel {
         highResImage = nil
         quickLookAnchorFramesByItemID.removeAll()
 
-        // 先拍当前 scope 快照，重开时立刻可画
+        // 关闭时只保留「全部」首屏快照：下次打开默认分组，直接画最新头，不带回自定义分组子集。
         let snapshotLimit = max(ClipboardHistoryWarmCache.defaultLimit, Self.displayMaterializeWindowSize)
+        let allHeadItems: [ClipboardItem]
+        let allHeadIDs: [UUID]
+        if currentFilter == nil, selectedBuiltInGroup == nil, selectedGroupId == nil {
+            allHeadItems = Array(displayedItems.prefix(snapshotLimit))
+            allHeadIDs = Array(displayedItemIDs.prefix(snapshotLimit))
+        } else {
+            // 非全部时用全局 items 头（时间倒序）作为下次打开的全部首屏
+            allHeadItems = Array(items.prefix(snapshotLimit))
+            allHeadIDs = allHeadItems.map(\.id)
+        }
         lastScopeSnapshot = PanelScopeSnapshot(
-            filter: currentFilter,
-            builtInGroup: selectedBuiltInGroup,
-            groupID: selectedGroupId,
-            items: Array(displayedItems.prefix(snapshotLimit)),
-            displayedIDs: Array(displayedItemIDs.prefix(snapshotLimit))
+            filter: nil,
+            builtInGroup: nil,
+            groupID: nil,
+            items: allHeadItems,
+            displayedIDs: allHeadIDs
         )
 
         let retainCount = ClipboardHistoryWarmCache.defaultLimit
@@ -158,28 +187,31 @@ extension ClipboardViewModel {
         isLoadingMoreHistory = false
         isInitialHistoryLoading = false
 
-        // 裁剪时优先保留当前 scope 命中项 + 全局头，避免分组重开变空
+        // 裁剪时优先保留全局头（下次打开默认「全部」），再夹带当前可见项避免丢数据。
         let keepIDs = Set(lastScopeSnapshot?.displayedIDs ?? [])
-        let scoped = items.filter { keepIDs.contains($0.id) }
         let head = Array(items.prefix(retainCount))
-        let merged = deduplicatedItemsPreservingOrder(scoped + head)
+        let scoped = items.filter { keepIDs.contains($0.id) }
+        let merged = deduplicatedItemsPreservingOrder(head + scoped)
         let retained = Array(merged.prefix(max(retainCount, min(scoped.count, snapshotLimit))))
 
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
             replaceItems(retained, enqueueLinkMetadata: false)
+            // 关闭后内存态也回到「全部」，与下次打开默认分组一致。
+            currentFilter = nil
+            selectedBuiltInGroup = nil
+            selectedGroupId = nil
             if let snap = lastScopeSnapshot, snap.displayedIDs.isEmpty == false {
-                // 恢复 scope 显示 ID（可能比 retained 更贴当前分组）
                 let available = Set(retained.map(\.id))
-                let scopedIDs = snap.displayedIDs.filter { available.contains($0) }
-                if scopedIDs.isEmpty == false {
-                    publishDisplayedItemIDs(scopedIDs)
+                let headIDs = snap.displayedIDs.filter { available.contains($0) }
+                if headIDs.isEmpty == false {
+                    publishDisplayedItemIDs(headIDs)
                 } else {
-                    refreshDisplayedItemsFromCurrentScope()
+                    publishAllScopeDisplayedItems()
                 }
             } else {
-                refreshDisplayedItemsFromCurrentScope()
+                publishAllScopeDisplayedItems()
             }
             clampSelectionToDisplayedItems()
         }
@@ -260,8 +292,8 @@ extension ClipboardViewModel {
             return
         }
 
-        // 先尝试 scope 快照（含分组/智能分类）
-        if restoreScopeSnapshotIfPossible() {
+        // 仅全部 scope 才用快照；打开路径已 reset 到全部。
+        if isAllScopeSnapshot(lastScopeSnapshot), restoreScopeSnapshotIfPossible() {
             return
         }
 
@@ -321,5 +353,64 @@ extension ClipboardViewModel {
             isInitialHistoryLoading = false
         }
         return displayedItems.isEmpty == false || displayedItemIDs.isEmpty == false
+    }
+
+    /// 每次打开面板：切回第一个分组（全部）。
+    func resetToDefaultGroupForPresentation() {
+        let alreadyDefault =
+            currentFilter == nil
+            && selectedBuiltInGroup == nil
+            && selectedGroupId == nil
+
+        currentFilter = nil
+        selectedBuiltInGroup = nil
+        selectedGroupId = nil
+
+        // 分页游标也回到「全部」，避免沿用分组/类型/收藏的 offset。
+        if pagination.scopeGroupId != nil
+            || pagination.scopeTypeRawValue != nil
+            || pagination.scopePinnedOnly
+            || pagination.activeQuery.isEmpty == false {
+            let pageSize = pagination.pageSize > 0 ? pagination.pageSize : Self.historyPageSize
+            pagination = HistoryPaginationState(
+                loadedCount: items.count,
+                pageSize: pageSize,
+                hasMore: hasLoadedFullHistory == false,
+                isLoading: false,
+                generation: dataLoadGeneration,
+                activeQuery: "",
+                scopeGroupId: nil,
+                scopeTypeRawValue: nil,
+                scopePinnedOnly: false
+            )
+        }
+
+        if alreadyDefault == false {
+            filterGeneration &+= 1
+        }
+    }
+
+    /// 打开后确保列表按「全部」展示（时间倒序最新在前）。
+    func ensureDefaultGroupDisplayedForPresentation() {
+        guard currentFilter == nil,
+              selectedBuiltInGroup == nil,
+              selectedGroupId == nil else {
+            return
+        }
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            if items.isEmpty == false {
+                publishAllScopeDisplayedItems()
+            } else {
+                refreshDisplayedItemsFromCurrentScope()
+            }
+        }
+    }
+
+    private func isAllScopeSnapshot(_ snap: PanelScopeSnapshot?) -> Bool {
+        guard let snap else { return false }
+        return snap.filter == nil && snap.builtInGroup == nil && snap.groupID == nil
     }
 }
