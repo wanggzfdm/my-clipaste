@@ -47,6 +47,8 @@ final class ClipboardViewModel: ObservableObject {
     static let backgroundPageBatchSize = historyPageSize
     /// 距列表尾部多少条内触发 loadMore。
     static let loadMorePrefetchDistance = 8
+    /// 打开态内存软上限：超出则丢掉最旧且未保护的条目，保持 DB offset 游标。
+    static let openStateItemSoftCap = 480
     /// 首屏物化窗口：超过此数量时先提交窗口，再分帧补齐，避免切到「全部」时主线程一次拷贝上千 struct。
     static let displayMaterializeWindowSize = 100
     static let displayMaterializeChunkSize = 200

@@ -27,7 +27,7 @@ extension ClipboardViewModel {
     }
 
     func selectAll() {
-        selectedItemIDs = Set(displayedItemsForInteraction.map(\.id))
+        selectedItemIDs = Set(displayedItemIDs)
     }
 
     func clearSelection() {
@@ -81,32 +81,39 @@ extension ClipboardViewModel {
     }
 
     func moveSelection(direction: Int) {
-        let displayedItems = displayedItemsForInteraction
-        guard !displayedItems.isEmpty else { return }
+        // 使用完整 ID 列表导航，避免大列表分帧物化未完成时只能在首窗内移动。
+        let ids = displayedItemIDs
+        guard !ids.isEmpty else { return }
 
         let currentIndex = lastSelectedID.flatMap { lid in
-            displayedItems.firstIndex(where: { $0.id == lid })
+            ids.firstIndex(of: lid)
         }
 
         let nextIndex: Int
         if let idx = currentIndex {
-            nextIndex = min(max(idx + direction, 0), displayedItems.count - 1)
+            nextIndex = min(max(idx + direction, 0), ids.count - 1)
         } else {
-            nextIndex = direction > 0 ? 0 : displayedItems.count - 1
+            nextIndex = direction > 0 ? 0 : ids.count - 1
         }
 
-        let nextID = displayedItems[nextIndex].id
+        let nextID = ids[nextIndex]
         withAnimation(.easeInOut(duration: 0.1)) {
             selectedItemIDs = [nextID]
             lastSelectedID = nextID
         }
 
         requestListScroll(to: nextID, animated: true)
+        // 确保目标项已物化（分帧过程中可能尚未进入 displayedItems）
+        ensureDisplayedItemMaterialized(around: nextIndex)
         prewarmQuickLookPreviewIfNeeded()
     }
 
     var displayedItemsForInteraction: [ClipboardItem] {
-        displayedItems
+        // 物化完成时直接用缓存；否则按 ID 解析，保证交互不依赖首窗。
+        if displayedItems.count == displayedItemIDs.count {
+            return displayedItems
+        }
+        return displayedItemIDs.compactMap { item(for: $0) }
     }
 
     func selectionCandidateAfterRemoving(ids removedIDs: Set<UUID>) -> UUID? {
@@ -172,7 +179,7 @@ extension ClipboardViewModel {
     }
 
     func clampSelectionToDisplayedItems() {
-        let visibleIDs = Set(displayedItemsForInteraction.map(\.id))
+        let visibleIDs = Set(displayedItemIDs)
 
         if !selectedItemIDs.isSubset(of: visibleIDs) {
             selectedItemIDs.formIntersection(visibleIDs)
@@ -184,6 +191,26 @@ extension ClipboardViewModel {
 
         if let quickLookItem, !visibleIDs.contains(quickLookItem.id) {
             dismissQuickLook()
+        }
+    }
+
+    /// 键盘导航到尚未物化的区域时，扩展物化窗口以包含目标。
+    func ensureDisplayedItemMaterialized(around index: Int) {
+        guard displayedItemIDs.indices.contains(index) else { return }
+        if displayedItems.indices.contains(index),
+           displayedItems[index].id == displayedItemIDs[index] {
+            return
+        }
+        // 触发一次针对前缀的加速物化（含目标 index）
+        let end = min(displayedItemIDs.count, max(index + 1, Self.displayMaterializeWindowSize))
+        let prefixIDs = Array(displayedItemIDs.prefix(end))
+        let materialised = prefixIDs.compactMap { item(for: $0) }
+        if materialised.count > displayedItems.count {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                displayedItems = materialised
+            }
         }
     }
 }

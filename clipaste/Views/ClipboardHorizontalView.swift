@@ -25,9 +25,14 @@ struct ClipboardHorizontalView: View {
                                 ClipboardCardView(
                                     item: item,
                                     viewModel: viewModel,
+                                    isSelected: viewModel.selectedItemIDs.contains(id),
+                                    searchHighlight: viewModel.activeSearchQuery,
+                                    isQuickPasteModifierHeld: viewModel.isQuickPasteModifierHeld,
+                                    isAIEnabled: viewModel.aiSettingsViewModel.isAIEnabled,
                                     quickPasteIndex: quickPasteIndexesByItemID[id],
                                     isListScrolling: isListScrolling
                                 )
+                                .equatable()
                                 .id(id)
                                 .contentShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
                                 .help(pasteHelpText)

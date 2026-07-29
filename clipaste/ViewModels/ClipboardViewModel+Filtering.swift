@@ -198,7 +198,8 @@ extension ClipboardViewModel {
             generation: generation,
             activeQuery: "",
             scopeGroupId: nil,
-            scopeTypeRawValue: nil
+            scopeTypeRawValue: nil,
+            scopePinnedOnly: false
         )
 
         // 内存有前缀但当前 scope 仍空时也要亮 loading，避免空托盘闪一下
@@ -253,6 +254,7 @@ extension ClipboardViewModel {
         let query = pagination.activeQuery
         let groupId = pagination.scopeGroupId
         let typeRaw = pagination.scopeTypeRawValue
+        let pinnedOnly = pagination.scopePinnedOnly
 
         pagination.isLoading = true
         isLoadingMoreHistory = true
@@ -264,6 +266,7 @@ extension ClipboardViewModel {
                 searchText: query,
                 groupId: groupId,
                 typeRawValue: typeRaw,
+                pinnedOnly: pinnedOnly,
                 fetchLimit: pageSize,
                 offset: offset
             )
@@ -292,18 +295,19 @@ extension ClipboardViewModel {
             query: trimmed,
             groupId: selectedGroupId,
             typeRawValue: currentFilter?.rawValue,
+            pinnedOnly: selectedBuiltInGroup == .favorites,
             replaceDisplayedWithPage: true
         )
     }
 
-    /// 切换用户分组 / 智能类型过滤时的 DB 首屏。
-    /// built-in 分组匹配逻辑较复杂，仍走内存 filter（依赖已加载窗口 + 续页全局 merge）。
+    /// 切换用户分组 / 类型 / 收藏 时的 DB 首屏。
     @MainActor
-    func beginScopePagination(groupId: String?, typeRawValue: String?) {
+    func beginScopePagination(groupId: String?, typeRawValue: String?, pinnedOnly: Bool = false) {
         beginPagedFetch(
             query: activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines),
             groupId: groupId,
             typeRawValue: typeRawValue,
+            pinnedOnly: pinnedOnly,
             replaceDisplayedWithPage: true
         )
     }
@@ -313,6 +317,7 @@ extension ClipboardViewModel {
         query: String,
         groupId: String?,
         typeRawValue: String?,
+        pinnedOnly: Bool,
         replaceDisplayedWithPage: Bool
     ) {
         dataLoadGeneration &+= 1
@@ -329,7 +334,8 @@ extension ClipboardViewModel {
             generation: generation,
             activeQuery: query,
             scopeGroupId: groupId,
-            scopeTypeRawValue: typeRawValue
+            scopeTypeRawValue: typeRawValue,
+            scopePinnedOnly: pinnedOnly
         )
         isLoadingMoreHistory = true
         if items.isEmpty || displayedItems.isEmpty {
@@ -343,6 +349,7 @@ extension ClipboardViewModel {
                 searchText: query,
                 groupId: groupId,
                 typeRawValue: typeRawValue,
+                pinnedOnly: pinnedOnly,
                 fetchLimit: pageSize,
                 offset: 0
             )
@@ -476,6 +483,7 @@ extension ClipboardViewModel {
 
         isInitialHistoryLoading = false
         loadedHistoryCount = loadedCount
+        trimItemsToSoftCapIfNeeded()
     }
 
     @MainActor

@@ -14,6 +14,8 @@ struct HistoryPaginationState: Equatable {
     var scopeGroupId: String? = nil
     /// 类型过滤 rawValue；nil 表示不限类型。
     var scopeTypeRawValue: String? = nil
+    /// 仅收藏（isPinned）；对应 built-in favorites。
+    var scopePinnedOnly: Bool = false
 }
 
 /// 纯逻辑：是否应在尾部触发续页（不依赖 SwiftData / MainActor）。

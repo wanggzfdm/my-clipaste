@@ -143,6 +143,39 @@ extension ClipboardViewModel {
         }
     }
 
+    /// 打开态软上限：丢掉最旧且未保护项。不改 `pagination.loadedCount`（DB 游标）。
+    @MainActor
+    func trimItemsToSoftCapIfNeeded() {
+        let cap = Self.openStateItemSoftCap
+        guard items.count > cap else { return }
+
+        var protected = selectedItemIDs
+        for id in displayedItemIDs.prefix(Self.displayMaterializeWindowSize) {
+            protected.insert(id)
+        }
+        for item in items where item.isPinned {
+            protected.insert(item.id)
+        }
+
+        var next = items
+        while next.count > cap {
+            guard let idx = next.indices.reversed().first(where: { protected.contains(next[$0].id) == false }) else {
+                break
+            }
+            next.remove(at: idx)
+        }
+        guard next.count < items.count else { return }
+
+        let remaining = Set(next.map(\.id))
+        items = next
+        rebuildItemIndexes()
+        if displayedItemIDs.contains(where: { remaining.contains($0) == false }) {
+            publishDisplayedItemIDs(displayedItemIDs.filter { remaining.contains($0) })
+        } else {
+            rematerializeDisplayedItems()
+        }
+    }
+
     func removeItems(withIDs ids: Set<UUID>) {
         guard !ids.isEmpty else { return }
 

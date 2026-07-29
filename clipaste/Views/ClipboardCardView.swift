@@ -1,12 +1,31 @@
 import AppKit
 import SwiftUI
 
-struct ClipboardCardView: View {
+struct ClipboardCardView: View, Equatable {
     let item: ClipboardItem
-    @ObservedObject var viewModel: ClipboardViewModel
+    /// 不用 @ObservedObject：由父列表观察 VM 并传入渲染 props，避免任意 @Published 打满可见卡。
+    var viewModel: ClipboardViewModel
+    var isSelected: Bool = false
+    var searchHighlight: String = ""
+    var isQuickPasteModifierHeld: Bool = false
+    var isAIEnabled: Bool = false
     var quickPasteIndex: Int? = nil
     /// 横滑 fling 时由列表传入，用于抑制 RTF 新任务与次要装饰。
     var isListScrolling: Bool = false
+
+    static func == (lhs: ClipboardCardView, rhs: ClipboardCardView) -> Bool {
+        lhs.item.id == rhs.item.id
+            && lhs.item.contentHash == rhs.item.contentHash
+            && lhs.item.isPinned == rhs.item.isPinned
+            && lhs.item.customTitle == rhs.item.customTitle
+            && lhs.item.hasRTF == rhs.item.hasRTF
+            && lhs.isSelected == rhs.isSelected
+            && lhs.searchHighlight == rhs.searchHighlight
+            && lhs.isQuickPasteModifierHeld == rhs.isQuickPasteModifierHeld
+            && lhs.isAIEnabled == rhs.isAIEnabled
+            && lhs.quickPasteIndex == rhs.quickPasteIndex
+            && lhs.isListScrolling == rhs.isListScrolling
+    }
     
     @Environment(\.shouldDisableAnimations) private var shouldDisableAnimations
     @Environment(\.colorScheme) private var colorScheme
@@ -16,23 +35,17 @@ struct ClipboardCardView: View {
     @State private var richPreviewText: AttributedString?
     @AppStorage("appAccentColor") private var appAccentColor: AppAccentColor = .defaultValue
 
-    private var isSelected: Bool {
-        viewModel.selectedItemIDs.contains(item.id)
-    }
-
     private var previewText: String {
         if let preview = item.previewText, !preview.isEmpty { return preview }
         return item.textPreview.isEmpty ? String(localized: "(Empty)") : item.textPreview
     }
-
-    private var searchHighlight: String { viewModel.activeSearchQuery }
 
     private var quickPasteNumber: Int? {
         quickPasteIndex.map { $0 + 1 }
     }
 
     private var showsQuickPasteBadge: Bool {
-        quickPasteNumber != nil && viewModel.isQuickPasteModifierHeld
+        quickPasteNumber != nil && isQuickPasteModifierHeld
     }
 
     private var shouldTriggerPreview: Bool {
@@ -40,7 +53,7 @@ struct ClipboardCardView: View {
     }
 
     private var richTextTaskKey: String {
-        "\(item.id.uuidString)-\(item.contentHash)-\(item.hasRTF)-search:\(viewModel.isSearchFilteringActive)"
+        "\(item.id.uuidString)-\(item.contentHash)-\(item.hasRTF)-scroll:\(isListScrolling)-search:\(searchHighlight.isEmpty == false)"
     }
 
     private var headerTextColor: Color {
@@ -463,18 +476,17 @@ struct ClipboardCardView: View {
     }
 
     private var showsAIShortcut: Bool {
-        // Hide during fling — menu + material capsule is unnecessary mid-scroll work.
         !shouldDisableAnimations
             && !isListScrolling
-            && viewModel.aiSettingsViewModel.isAIEnabled
+            && isAIEnabled
             && (isHovered || isSelected)
-            && viewModel.isQuickPasteModifierHeld == false
+            && isQuickPasteModifierHeld == false
     }
 
     @ViewBuilder
     @MainActor
     private func refreshRichPreviewText() async {
-        guard viewModel.isSearchFilteringActive == false else {
+        guard searchHighlight.isEmpty else {
             richPreviewText = nil
             return
         }

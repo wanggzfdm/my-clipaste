@@ -9,8 +9,15 @@ struct ClipboardVerticalView: View {
         ScrollView(.vertical, showsIndicators: true) {
             LazyVStack(spacing: 16) {
                 ForEach(items) { item in
-                    ClipboardCardView(item: item, viewModel: viewModel)
-                        .contentShape(RoundedRectangle(cornerRadius: 16))
+                    ClipboardCardView(
+                        item: item,
+                        viewModel: viewModel,
+                        isSelected: viewModel.selectedItemIDs.contains(item.id),
+                        searchHighlight: viewModel.activeSearchQuery,
+                        isQuickPasteModifierHeld: viewModel.isQuickPasteModifierHeld,
+                        isAIEnabled: viewModel.aiSettingsViewModel.isAIEnabled
+                    )
+                    .equatable()
                         .help(pasteHelpText)
                 }
             }

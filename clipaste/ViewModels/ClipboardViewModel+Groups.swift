@@ -244,12 +244,13 @@ private extension ClipboardViewModel {
             reconcileSelectionAfterDisplayedItemsChange()
         }
 
-        // 用户分组 / 类型过滤：DB 首屏，避免只显示内存窗口内的命中。
-        // built-in 仍用内存 filter（匹配规则复杂）。
-        if builtInGroup == nil, groupID != nil || filter != nil {
-            beginScopePagination(groupId: groupID, typeRawValue: filter?.rawValue)
+        // 用户分组 / 类型 / 收藏：DB 首屏，避免只显示内存窗口内的命中。
+        if let builtInGroup, builtInGroup == .favorites {
+            beginScopePagination(groupId: nil, typeRawValue: nil, pinnedOnly: true)
+        } else if builtInGroup == nil, groupID != nil || filter != nil {
+            beginScopePagination(groupId: groupID, typeRawValue: filter?.rawValue, pinnedOnly: false)
         } else if groupID == nil, filter == nil, builtInGroup == nil {
-            // 回到「全部」：重置为无 scope 的按需分页首屏（若当前仍是搜索则 beginSearch 路径由 pipeline 处理）。
+            // 回到「全部」：重置为无 scope 的按需分页首屏。
             let q = activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
             if q.isEmpty {
                 loadData(mode: .visibleFirst)
@@ -257,7 +258,6 @@ private extension ClipboardViewModel {
                 beginSearchPagination(query: q)
             }
         } else if displayedItems.isEmpty, hasLoadedFullHistory == false {
-            // built-in 且内存无命中：亮 loading，并尝试多拉几页全局数据（loadMore 由列表触发）
             isInitialHistoryLoading = true
         }
 

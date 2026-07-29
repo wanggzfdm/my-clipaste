@@ -81,20 +81,29 @@ actor ClipboardSearcher {
         searchText: String,
         groupId: String? = nil,
         typeRawValue: String? = nil,
+        pinnedOnly: Bool = false,
         fetchLimit: Int? = nil,
         offset: Int = 0
     ) async -> [ClipboardItem] {
         let query = searchText
         let scopedGroupId = groupId
         let scopedType = typeRawValue
+        let onlyPinned = pinnedOnly
 
         // 只在 DB 侧施加单一主谓词，避免 #Predicate 组合式过深导致编译器超时。
         // 其余条件在映射后内存过滤（page 再放大一点补偿）。
         var descriptor: FetchDescriptor<ClipboardRecord>
         let needsPostFilter = (scopedGroupId != nil && scopedType != nil)
             || (query.isEmpty == false && (scopedGroupId != nil || scopedType != nil))
-
-        if let gid = scopedGroupId {
+            || (onlyPinned && (scopedGroupId != nil || scopedType != nil || query.isEmpty == false))
+        if onlyPinned {
+            descriptor = FetchDescriptor<ClipboardRecord>(
+                predicate: #Predicate<ClipboardRecord> { record in
+                    record.isPinned == true
+                },
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+        } else if let gid = scopedGroupId {
             descriptor = FetchDescriptor<ClipboardRecord>(
                 predicate: #Predicate<ClipboardRecord> { record in
                     record.groupId == gid || (record.groupIdsRaw?.contains(gid) == true)
@@ -172,11 +181,25 @@ actor ClipboardSearcher {
             return StorageManager.makeClipboardItem(from: snapshot)
         }
 
+        if onlyPinned {
+            items = items.filter(\.isPinned)
+        }
         if let type = scopedType {
             items = items.filter { $0.contentType.rawValue == type }
         }
         if let gid = scopedGroupId {
             items = items.filter { $0.groupIDs.contains(gid) }
+        }
+        if query.isEmpty == false {
+            items = items.filter { item in
+                let searchable = item.searchableText ?? item.textPreview
+                let matchesText = searchable.range(
+                    of: query,
+                    options: [.caseInsensitive, .diacriticInsensitive]
+                ) != nil
+                let matchesApp = item.appName.range(of: query, options: [.caseInsensitive]) != nil
+                return matchesText || matchesApp
+            }
         }
         if query.isEmpty == false {
             items = items.filter { item in
@@ -260,6 +283,7 @@ final class StorageManager {
         searchText: String,
         groupId: String? = nil,
         typeRawValue: String? = nil,
+        pinnedOnly: Bool = false,
         fetchLimit: Int,
         offset: Int = 0
     ) async -> [ClipboardItem] {
@@ -270,6 +294,7 @@ final class StorageManager {
                 searchText: searchText,
                 groupId: groupId,
                 typeRawValue: typeRawValue,
+                pinnedOnly: pinnedOnly,
                 fetchLimit: fetchLimit,
                 offset: offset
             )
