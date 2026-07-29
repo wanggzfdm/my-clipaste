@@ -46,7 +46,18 @@ struct ClipboardHorizontalView: View {
                                 .onAppear {
                                     viewModel.loadMoreIfNeeded(currentItemID: id)
                                 }
+                                // 禁止单卡默认 insertion（分组整表替换时的右→左飞入）。
+                                .transition(.identity)
                             }
+                        }
+                    }
+                    // 分组 / 数据替换时不要用系统默认水平插入动画。
+                    .animation(nil, value: viewModel.selectedGroupId)
+                    .animation(nil, value: viewModel.currentFilter)
+                    .animation(nil, value: viewModel.selectedBuiltInGroup)
+                    .transaction { transaction in
+                        if viewModel.isInitialHistoryLoading || viewModel.isLoadingMoreHistory {
+                            transaction.disablesAnimations = true
                         }
                     }
                     .padding(.horizontal, 33)
@@ -176,7 +187,12 @@ struct ClipboardHorizontalView: View {
                     proxy.scrollTo(itemID, anchor: .center)
                 }
             } else {
-                proxy.scrollTo(itemID, anchor: .center)
+                // 分组切换等路径：async 后必须再禁一次，否则仍可能横向滑入。
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    proxy.scrollTo(itemID, anchor: .center)
+                }
             }
         }
     }

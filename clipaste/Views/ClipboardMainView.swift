@@ -212,30 +212,40 @@ struct ClipboardMainView: View {
             isActive: viewModel.isSearchFilteringActive,
             token: searchTransitionToken
         ) {
-            if displayedItems.isEmpty {
-                // loading / 分组切换中的空列表走 EmptyState 内部 skeleton，避免「空托盘 → 突然有货」
-                ClipboardEmptyStateView(viewModel: viewModel)
-                    .transaction { $0.disablesAnimations = true }
-            } else {
-                Group {
-                    switch clipboardLayout {
-                    case .horizontal:
-                        ClipboardHorizontalView(
-                            viewModel: viewModel,
-                            items: displayedItems,
-                            focusedField: _focusedField
-                        )
-                    case .vertical, .compact:
-                        ClipboardVerticalListView(
-                            viewModel: viewModel,
-                            items: displayedItems,
-                            focusedField: _focusedField
-                        )
+            // 用 ZStack 叠放而非 if/else 换枝，避免 Empty↔List 的默认插入/飞入动画。
+            ZStack {
+                if displayedItems.isEmpty == false {
+                    Group {
+                        switch clipboardLayout {
+                        case .horizontal:
+                            ClipboardHorizontalView(
+                                viewModel: viewModel,
+                                items: displayedItems,
+                                focusedField: _focusedField
+                            )
+                        case .vertical, .compact:
+                            ClipboardVerticalListView(
+                                viewModel: viewModel,
+                                items: displayedItems,
+                                focusedField: _focusedField
+                            )
+                        }
                     }
+                    .transition(.identity)
                 }
-                // 数据替换时禁止隐式插入/删除动画（分组切换闪烁主因之一）
-                .transaction { $0.disablesAnimations = true }
+
+                if displayedItems.isEmpty {
+                    // loading / 真正空列表
+                    ClipboardEmptyStateView(viewModel: viewModel)
+                        .transition(.identity)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(nil, value: displayedItems.isEmpty)
+            .animation(nil, value: viewModel.selectedGroupId)
+            .animation(nil, value: viewModel.currentFilter)
+            .animation(nil, value: viewModel.selectedBuiltInGroup)
+            .transaction { $0.disablesAnimations = true }
         }
     }
 

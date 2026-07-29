@@ -124,6 +124,14 @@ struct ClipboardVerticalListView: View {
                             }
                         }
                     }
+                    .animation(nil, value: viewModel.selectedGroupId)
+                    .animation(nil, value: viewModel.currentFilter)
+                    .animation(nil, value: viewModel.selectedBuiltInGroup)
+                    .transaction { transaction in
+                        if viewModel.isInitialHistoryLoading || viewModel.isLoadingMoreHistory {
+                            transaction.disablesAnimations = true
+                        }
+                    }
                     .padding(.horizontal, horizontalPadding)
                     .padding(.vertical, verticalPadding)
                 }

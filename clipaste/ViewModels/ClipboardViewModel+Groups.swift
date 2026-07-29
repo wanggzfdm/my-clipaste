@@ -237,11 +237,24 @@ private extension ClipboardViewModel {
         filterGeneration &+= 1
         suppressFilterPipelineEcho = true
 
+        // 即将走 DB 首屏的 scope：内存未命中时不要先清空列表（Empty→LazyHStack 会像从右飞入）。
+        let willFetchScopeFromDB: Bool = {
+            if builtInGroup == .favorites { return true }
+            if groupID != nil || filter != nil { return true }
+            // 「全部」也会 loadData / 搜索分页
+            if groupID == nil, filter == nil, builtInGroup == nil { return true }
+            return false
+        }()
+
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            refreshDisplayedItemsFromCurrentScope()
-            reconcileSelectionAfterDisplayedItemsChange()
+            if willFetchScopeFromDB {
+                applyMemoryScopePreferringNonEmptyDisplay()
+            } else {
+                refreshDisplayedItemsFromCurrentScope()
+                reconcileSelectionAfterDisplayedItemsChange()
+            }
         }
 
         // 用户分组 / 类型 / 收藏：DB 首屏，避免只显示内存窗口内的命中。
@@ -265,5 +278,23 @@ private extension ClipboardViewModel {
         DispatchQueue.main.async { [weak self] in
             self?.suppressFilterPipelineEcho = false
         }
+    }
+
+    /// 内存能命中则立刻换到新 scope；命中为空则保持旧画面并打 loading，等 DB 页无动画替换。
+    private func applyMemoryScopePreferringNonEmptyDisplay() {
+        let query = activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let memoryIDs = items.compactMap { item -> UUID? in
+            matchesCurrentDisplayScope(item, query: query) ? item.id : nil
+        }
+
+        if memoryIDs.isEmpty == false {
+            publishDisplayedItemIDs(memoryIDs)
+            reconcileSelectionAfterDisplayedItemsChange()
+            return
+        }
+
+        // 保持当前 displayed*，避免 MainView 走 EmptyState 分支。
+        isInitialHistoryLoading = true
+        isLoadingMoreHistory = true
     }
 }
