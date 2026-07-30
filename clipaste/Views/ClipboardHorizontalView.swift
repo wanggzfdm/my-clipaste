@@ -12,69 +12,73 @@ struct ClipboardHorizontalView: View {
     @State private var isListScrolling = false
 
     private let quickPasteCoordinateSpaceName = "ClipboardHorizontalQuickPasteSpace"
-    /// 列表内容左缘锚点：scrollTo 首卡 leading 会吃掉左边距，改滚到此锚点以保留与分组一致的左侧空白。
+    /// 滚回列表起点用的左缘哨兵，必须放在 horizontal padding **之外**，
+    /// 否则 scrollTo(哨兵) 仍会把 33pt 左边距滚出视口。
     private static let leadingEdgeAnchorID = "clipboard-horizontal-leading-edge"
+    /// 与历史实现一致：卡片与面板左缘的固定空隙。
+    private static let horizontalPadding: CGFloat = 33
 
     private var shouldKillListAnimations: Bool {
         isListScrolling || viewModel.suppressListAnimations
     }
 
-    private var horizontalContentMargin: CGFloat { 33 }
-
     var body: some View {
         ScrollViewReader { proxy in
             GeometryReader { viewportProxy in
                 ScrollView(.horizontal, showsIndicators: false) {
-                    // epoch 变化时整树重建，避免 ForEach 对「新 ID」做水平 insertion 动画
-                    LazyHStack(alignment: .top, spacing: 20) {
-                        // 左缘哨兵：分组切换后滚回列表起点时用，避免首卡 .leading 贴边吃掉边距
+                    // 哨兵在 padding 外：scrollTo(leading) ≡ contentOffset 0，左边距与其它分组一致。
+                    HStack(spacing: 0) {
                         Color.clear
-                            .frame(width: 0, height: 0)
+                            .frame(width: 0, height: 1)
                             .id(Self.leadingEdgeAnchorID)
 
-                        let indexByID: [UUID: Int] = Dictionary(
-                            uniqueKeysWithValues: viewModel.displayedItemIDs.enumerated().map { ($0.element, $0.offset) }
-                        )
-                        ForEach(viewModel.displayedItemIDs, id: \.self) { id in
-                            if let item = viewModel.item(for: id) {
-                                ClipboardCardView(
-                                    item: item,
-                                    viewModel: viewModel,
-                                    isSelected: viewModel.selectedItemIDs.contains(id),
-                                    searchHighlight: viewModel.activeSearchQuery,
-                                    isQuickPasteModifierHeld: viewModel.isQuickPasteModifierHeld,
-                                    isAIEnabled: viewModel.aiSettingsViewModel.isAIEnabled,
-                                    quickPasteIndex: quickPasteIndexesByItemID[id],
-                                    isListScrolling: isListScrolling
-                                )
-                                .equatable()
-                                .id(id)
-                                .contentShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
-                                .help(pasteHelpText)
-                                .clipboardQuickPasteVisibleFrame(
-                                    id: id,
-                                    sourceIndex: indexByID[id] ?? 0,
-                                    coordinateSpaceName: quickPasteCoordinateSpaceName,
-                                    isTrackingEnabled: viewModel.isQuickPasteModifierHeld && !isListScrolling
-                                )
-                                .onAppear {
-                                    viewModel.loadMoreIfNeeded(currentItemID: id)
+                        LazyHStack(alignment: .top, spacing: 20) {
+                            let indexByID: [UUID: Int] = Dictionary(
+                                uniqueKeysWithValues: viewModel.displayedItemIDs.enumerated().map {
+                                    ($0.element, $0.offset)
                                 }
-                                .transition(.identity)
+                            )
+                            ForEach(viewModel.displayedItemIDs, id: \.self) { id in
+                                if let item = viewModel.item(for: id) {
+                                    ClipboardCardView(
+                                        item: item,
+                                        viewModel: viewModel,
+                                        isSelected: viewModel.selectedItemIDs.contains(id),
+                                        searchHighlight: viewModel.activeSearchQuery,
+                                        isQuickPasteModifierHeld: viewModel.isQuickPasteModifierHeld,
+                                        isAIEnabled: viewModel.aiSettingsViewModel.isAIEnabled,
+                                        quickPasteIndex: quickPasteIndexesByItemID[id],
+                                        isListScrolling: isListScrolling
+                                    )
+                                    .equatable()
+                                    .id(id)
+                                    .contentShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
+                                    .help(pasteHelpText)
+                                    .clipboardQuickPasteVisibleFrame(
+                                        id: id,
+                                        sourceIndex: indexByID[id] ?? 0,
+                                        coordinateSpaceName: quickPasteCoordinateSpaceName,
+                                        isTrackingEnabled: viewModel.isQuickPasteModifierHeld && !isListScrolling
+                                    )
+                                    .onAppear {
+                                        viewModel.loadMoreIfNeeded(currentItemID: id)
+                                    }
+                                    .transition(.identity)
+                                }
                             }
                         }
+                        .id(viewModel.listContentEpoch)
+                        .animation(nil, value: viewModel.listContentEpoch)
+                        .animation(nil, value: viewModel.selectedGroupId)
+                        .animation(nil, value: viewModel.currentFilter)
+                        .animation(nil, value: viewModel.selectedBuiltInGroup)
+                        // 恢复与其它分组相同的边距实现（不要用 contentMargins，避免与 scrollTo 行为不一致）
+                        .padding(.horizontal, Self.horizontalPadding)
+                        .padding(.top, 13)
+                        .padding(.bottom, 5.5)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
                     }
-                    .id(viewModel.listContentEpoch)
-                    .animation(nil, value: viewModel.listContentEpoch)
-                    .animation(nil, value: viewModel.selectedGroupId)
-                    .animation(nil, value: viewModel.currentFilter)
-                    .animation(nil, value: viewModel.selectedBuiltInGroup)
-                    .padding(.top, 13)
-                    .padding(.bottom, 5.5)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
                 }
-                // 边距放在 scroll content margins：scrollTo 卡片时仍保留与其它分组一致的左右空白
-                .contentMargins(.horizontal, horizontalContentMargin, for: .scrollContent)
                 .disableAnimationsWhenScrolling(shouldKillListAnimations)
                 .background {
                     ScrollActivityObserver(isScrolling: $isListScrolling)
@@ -121,7 +125,7 @@ struct ClipboardHorizontalView: View {
                     )
                 }
                 .onChange(of: viewModel.listContentEpoch) { _, _ in
-                    // scope 重建后滚回内容左缘（含 contentMargins），不要 scrollTo 首卡 leading 贴边
+                    // 滚到 padding 外的哨兵 = 视口看到完整 33pt 左边距
                     scrollToLeadingEdge(with: proxy)
                 }
                 .onChange(of: viewModel.isQuickPasteModifierHeld) { _, isHeld in
