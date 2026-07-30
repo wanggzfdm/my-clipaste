@@ -73,6 +73,10 @@ final class ClipboardViewModel: ObservableObject {
     @Published var listScrollRequest: ClipboardListScrollRequest? = nil
     @Published var isInitialHistoryLoading = false
     @Published var isLoadingMoreHistory = false
+    /// 分组/范围切换时置位：横向 LazyHStack 强制无动画重建，避免右→左飞入。
+    @Published var suppressListAnimations = false
+    /// 每次 scope 切换递增；列表用 `.id(listContentEpoch)` 整树重建而非 cell 插入动画。
+    @Published var listContentEpoch: UInt = 0
     var lastSelectedID: UUID? = nil
     @Published var quickLookItem: ClipboardItem? = nil
     /// 非 @Published:滚动时每帧被所有可见卡片写入,发布会引发全卡片级联重绘;
@@ -143,6 +147,7 @@ final class ClipboardViewModel: ObservableObject {
     /// 分帧物化 generation，避免过期补齐覆盖新的 scope。
     var displayMaterializeGeneration: UInt = 0
     var displayMaterializeTask: Task<Void, Never>? = nil
+    var scopeSwitchAnimationSuppressTask: Task<Void, Never>? = nil
     /// 关面板时保留的当前 scope 首屏，重开分组时避免空白。
     var lastScopeSnapshot: PanelScopeSnapshot? = nil
     let settingsViewModel: SettingsViewModel

@@ -232,6 +232,9 @@ private extension ClipboardViewModel {
         selectedBuiltInGroup = builtInGroup
         selectedGroupId = groupID
 
+        // 先掐死列表动画并重建 Lazy* 身份，再改数据。
+        beginScopeSwitchAnimationSuppression()
+
         // 同帧刷新 + 静默 transaction：避免 Empty/List 切换与 ForEach 插入动画造成闪烁。
         // 同时 bump filterGeneration 并短暂 suppress pipeline，吞掉 Combine 对同一次 scope 变更的二次 rematerialize。
         filterGeneration &+= 1

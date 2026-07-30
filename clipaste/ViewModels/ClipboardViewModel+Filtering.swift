@@ -358,8 +358,10 @@ extension ClipboardViewModel {
 
             if replaceDisplayedWithPage {
                 self.mergeItems(page, prepend: true, enqueueLinkMetadata: false)
+                self.noteListContentReplacedWithoutAnimation()
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
+                transaction.animation = nil
                 withTransaction(transaction) {
                     self.publishDisplayedItemIDs(page.map(\.id))
                     self.reconcileSelectionAfterDisplayedItemsChange()
@@ -427,6 +429,13 @@ extension ClipboardViewModel {
     @MainActor
     func applyInitialHistoryPage(_ pageItems: [ClipboardItem], generation: UInt, mode: DataLoadMode) {
         guard generation == dataLoadGeneration else { return }
+
+        // 切回「全部」等路径：整表数据替换时同步掐动画。
+        if suppressListAnimations == false {
+            noteListContentReplacedWithoutAnimation()
+        } else {
+            listContentEpoch &+= 1
+        }
 
         if mode == .visibleFirst, items.isEmpty == false {
             let preexisting = items
