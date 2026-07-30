@@ -409,11 +409,6 @@ extension ClipboardViewModel {
         replaceItems(mappedItems)
         isInitialHistoryLoading = false
 
-        // Always use the filter pipeline to set displayedItemIDs to ensure
-        // consistent behavior. The filter pipeline will set displayedItemIDs
-        // based on the current activeSearchQuery (which may be debounced).
-        // This ensures search state is preserved when loading new items.
-
         let validIDs = Set(mappedItems.map(\.id))
         let staleIDs = selectedItemIDs.subtracting(validIDs)
         if !staleIDs.isEmpty {
@@ -423,6 +418,17 @@ extension ClipboardViewModel {
             lastSelectedID = nil
         }
 
+        // 不依赖 filter pipeline（分组切换时 suppressFilterPipelineEcho 会吞掉 $items 回声）。
+        // 「全部」必须直接按最新 items 发布，否则会残留上一分组的 displayedItemIDs。
+        let query = activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if query.isEmpty,
+           selectedGroupId == nil,
+           currentFilter == nil,
+           selectedBuiltInGroup == nil {
+            publishAllScopeDisplayedItems()
+        } else {
+            refreshDisplayedItemsFromCurrentScope()
+        }
         reconcileSelectionAfterDisplayedItemsChange()
     }
 
@@ -437,20 +443,38 @@ extension ClipboardViewModel {
             listContentEpoch &+= 1
         }
 
-        if mode == .visibleFirst, items.isEmpty == false {
+        let query = activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isAllScope =
+            query.isEmpty
+            && selectedGroupId == nil
+            && currentFilter == nil
+            && selectedBuiltInGroup == nil
+
+        if mode == .visibleFirst, items.isEmpty == false, isAllScope == false {
+            // 非「全部」的 visibleFirst 合并（例如面板重开）
             let preexisting = items
             mergeItems(pageItems, prepend: true)
 
-            // Optimistic memory captures may land before DB upsert finishes. mergeItems
-            // (prepend: true) keeps the DB page first and would demote those fresher
-            // in-memory heads — re-surface any item newer than the page head.
             let pageNewestTimestamp = pageItems.map(\.timestamp).max() ?? .distantPast
             for candidate in preexisting where candidate.timestamp > pageNewestTimestamp {
                 upsertItem(candidate, shouldResort: true)
             }
             resortItemsForPresentation()
+            refreshDisplayedItemsFromCurrentScope()
+            reconcileSelectionAfterDisplayedItemsChange()
+        } else if mode == .visibleFirst, items.isEmpty == false, isAllScope {
+            // 「全部」+ visibleFirst：合并后必须按时间重排并发布全 scope，不能沿用旧 displayed IDs。
+            let preexisting = items
+            mergeItems(pageItems, prepend: true)
+            let pageNewestTimestamp = pageItems.map(\.timestamp).max() ?? .distantPast
+            for candidate in preexisting where candidate.timestamp > pageNewestTimestamp {
+                upsertItem(candidate, shouldResort: true)
+            }
+            resortItemsForPresentation()
+            publishAllScopeDisplayedItems()
             reconcileSelectionAfterDisplayedItemsChange()
         } else {
+            // fullRefresh 或空内存：用 DB 最新页整体替换
             applyLoadedItems(pageItems)
         }
 

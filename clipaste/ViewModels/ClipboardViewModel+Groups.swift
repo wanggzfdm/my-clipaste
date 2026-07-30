@@ -241,18 +241,22 @@ private extension ClipboardViewModel {
         suppressFilterPipelineEcho = true
 
         // 即将走 DB 首屏的 scope：内存未命中时不要先清空列表（Empty→LazyHStack 会像从右飞入）。
+        let switchingToAll = groupID == nil && filter == nil && builtInGroup == nil
         let willFetchScopeFromDB: Bool = {
             if builtInGroup == .favorites { return true }
             if groupID != nil || filter != nil { return true }
-            // 「全部」也会 loadData / 搜索分页
-            if groupID == nil, filter == nil, builtInGroup == nil { return true }
+            if switchingToAll { return true }
             return false
         }()
 
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            if willFetchScopeFromDB {
+            if switchingToAll {
+                // 切回「全部」：不要用当前内存脏子集当首屏（往往还是上一分组的时间段）。
+                // 等 fullRefresh 拉最新页；若已有按时间序的 items 可先展示头，否则保持旧画面 + loading。
+                prepareAllScopeDisplayWhileReloading()
+            } else if willFetchScopeFromDB {
                 applyMemoryScopePreferringNonEmptyDisplay()
             } else {
                 refreshDisplayedItemsFromCurrentScope()
@@ -265,11 +269,11 @@ private extension ClipboardViewModel {
             beginScopePagination(groupId: nil, typeRawValue: nil, pinnedOnly: true)
         } else if builtInGroup == nil, groupID != nil || filter != nil {
             beginScopePagination(groupId: groupID, typeRawValue: filter?.rawValue, pinnedOnly: false)
-        } else if groupID == nil, filter == nil, builtInGroup == nil {
-            // 回到「全部」：重置为无 scope 的按需分页首屏。
+        } else if switchingToAll {
+            // 回到「全部」：必须从 DB 最新首屏重建，不能 visibleFirst 合并分组脏数据。
             let q = activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
             if q.isEmpty {
-                loadData(mode: .visibleFirst)
+                loadData(mode: .fullRefresh)
             } else {
                 beginSearchPagination(query: q)
             }
@@ -299,5 +303,36 @@ private extension ClipboardViewModel {
         // 保持当前 displayed*，避免 MainView 走 EmptyState 分支。
         isInitialHistoryLoading = true
         isLoadingMoreHistory = true
+    }
+
+    /// 切回「全部」等待 fullRefresh 时的即时展示策略。
+    private func prepareAllScopeDisplayWhileReloading() {
+        isInitialHistoryLoading = true
+        isLoadingMoreHistory = true
+
+        // items 若已是时间倒序全集头，可先对齐展示；否则保持旧画面，避免先闪分组子集。
+        guard items.isEmpty == false else { return }
+        let sorted = items.sorted { $0.timestamp > $1.timestamp }
+        // 仅当当前 items 看起来已覆盖「比分组更广」时才预发布，否则宁可不改 displayed。
+        // 简单启发：数量明显大于当前展示，或首条比当前展示首条更新。
+        let shouldPaintPreview: Bool = {
+            if displayedItemIDs.isEmpty { return true }
+            if sorted.count > displayedItemIDs.count { return true }
+            if let newest = sorted.first,
+               let currentFirstID = displayedItemIDs.first,
+               let currentFirst = item(for: currentFirstID),
+               newest.timestamp > currentFirst.timestamp {
+                return true
+            }
+            return false
+        }()
+
+        guard shouldPaintPreview else { return }
+        // 不在此处 replaceItems（避免打乱正在进行的 fullRefresh）；只改展示 ID 顺序。
+        let previewIDs = sorted.map(\.id)
+        publishDisplayedItemIDs(previewIDs)
+        // 选中最新
+        shouldResetSelectionToFirstDisplayedItem = true
+        reconcileSelectionAfterDisplayedItemsChange()
     }
 }
