@@ -12,10 +12,14 @@ struct ClipboardHorizontalView: View {
     @State private var isListScrolling = false
 
     private let quickPasteCoordinateSpaceName = "ClipboardHorizontalQuickPasteSpace"
+    /// 列表内容左缘锚点：scrollTo 首卡 leading 会吃掉左边距，改滚到此锚点以保留与分组一致的左侧空白。
+    private static let leadingEdgeAnchorID = "clipboard-horizontal-leading-edge"
 
     private var shouldKillListAnimations: Bool {
         isListScrolling || viewModel.suppressListAnimations
     }
+
+    private var horizontalContentMargin: CGFloat { 33 }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -23,6 +27,11 @@ struct ClipboardHorizontalView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     // epoch 变化时整树重建，避免 ForEach 对「新 ID」做水平 insertion 动画
                     LazyHStack(alignment: .top, spacing: 20) {
+                        // 左缘哨兵：分组切换后滚回列表起点时用，避免首卡 .leading 贴边吃掉边距
+                        Color.clear
+                            .frame(width: 0, height: 0)
+                            .id(Self.leadingEdgeAnchorID)
+
                         let indexByID: [UUID: Int] = Dictionary(
                             uniqueKeysWithValues: viewModel.displayedItemIDs.enumerated().map { ($0.element, $0.offset) }
                         )
@@ -60,11 +69,12 @@ struct ClipboardHorizontalView: View {
                     .animation(nil, value: viewModel.selectedGroupId)
                     .animation(nil, value: viewModel.currentFilter)
                     .animation(nil, value: viewModel.selectedBuiltInGroup)
-                    .padding(.horizontal, 33)
                     .padding(.top, 13)
                     .padding(.bottom, 5.5)
                     .frame(maxHeight: .infinity, alignment: .bottom)
                 }
+                // 边距放在 scroll content margins：scrollTo 卡片时仍保留与其它分组一致的左右空白
+                .contentMargins(.horizontal, horizontalContentMargin, for: .scrollContent)
                 .disableAnimationsWhenScrolling(shouldKillListAnimations)
                 .background {
                     ScrollActivityObserver(isScrolling: $isListScrolling)
@@ -111,13 +121,8 @@ struct ClipboardHorizontalView: View {
                     )
                 }
                 .onChange(of: viewModel.listContentEpoch) { _, _ in
-                    // scope 重建后立刻钉到当前选中/首项，禁止横向滑入观感
-                    if let id = viewModel.lastSelectedID
-                        ?? viewModel.selectedItemIDs.first
-                        ?? viewModel.displayedItemIDs.first
-                    {
-                        scrollToItem(with: proxy, itemID: id, animated: false)
-                    }
+                    // scope 重建后滚回内容左缘（含 contentMargins），不要 scrollTo 首卡 leading 贴边
+                    scrollToLeadingEdge(with: proxy)
                 }
                 .onChange(of: viewModel.isQuickPasteModifierHeld) { _, isHeld in
                     guard !isHeld, !quickPasteIndexesByItemID.isEmpty else { return }
@@ -180,13 +185,33 @@ struct ClipboardHorizontalView: View {
         return true
     }
 
+    private func scrollToLeadingEdge(with proxy: ScrollViewProxy) {
+        DispatchQueue.main.async {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            transaction.animation = nil
+            withTransaction(transaction) {
+                proxy.scrollTo(Self.leadingEdgeAnchorID, anchor: .leading)
+            }
+            CATransaction.commit()
+        }
+    }
+
     private func scrollToItem(
         with proxy: ScrollViewProxy,
         itemID: UUID,
         animated: Bool,
         anchor: UnitPoint = .center
     ) {
-        // 下一帧再滚：等 LazyHStack 按新 identity 布局完
+        // 滚到「当前列表第一张」且无动画：视为回到列表起点，保留左侧空白。
+        let isListHead = itemID == viewModel.displayedItemIDs.first
+        if animated == false, isListHead {
+            scrollToLeadingEdge(with: proxy)
+            return
+        }
+
         DispatchQueue.main.async {
             if animated {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8, blendDuration: 0.2)) {
@@ -195,15 +220,13 @@ struct ClipboardHorizontalView: View {
                 return
             }
 
-            // AppKit 层 + SwiftUI Transaction 双杀，避免 macOS ScrollView 忽略 disablesAnimations
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             var transaction = Transaction()
             transaction.disablesAnimations = true
             transaction.animation = nil
             withTransaction(transaction) {
-                // 分组切换用 leading，减少「从右侧滑入视口」的错觉
-                proxy.scrollTo(itemID, anchor: animated ? anchor : .leading)
+                proxy.scrollTo(itemID, anchor: anchor)
             }
             CATransaction.commit()
         }
