@@ -221,6 +221,12 @@ extension ClipboardViewModel {
             )
 
             guard !Task.isCancelled, generation == self.dataLoadGeneration else { return }
+            self.cacheScopePage(
+                firstPage,
+                for: .all(query: ""),
+                loadedCount: firstPage.count,
+                hasMore: firstPage.count == pageSize
+            )
 
             self.applyInitialHistoryPage(
                 firstPage,
@@ -290,6 +296,13 @@ extension ClipboardViewModel {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.isEmpty == false else { return }
 
+        activeScopeCacheKey = scopeCacheKey(
+            query: trimmed,
+            groupID: selectedGroupId,
+            type: currentFilter,
+            builtInGroup: selectedBuiltInGroup
+        )
+
         // 保留当前分组/类型 scope，搜索在 scope 内进行。
         beginPagedFetch(
             query: trimmed,
@@ -337,6 +350,12 @@ extension ClipboardViewModel {
             scopeTypeRawValue: typeRawValue,
             scopePinnedOnly: pinnedOnly
         )
+        activeScopeCacheKey = scopeCacheKey(
+            query: query,
+            groupID: groupId,
+            type: typeRawValue.flatMap(ClipboardContentType.init(rawValue:)),
+            builtInGroup: pinnedOnly ? .favorites : nil
+        )
         isLoadingMoreHistory = true
         if items.isEmpty || displayedItems.isEmpty {
             isInitialHistoryLoading = true
@@ -356,9 +375,22 @@ extension ClipboardViewModel {
 
             guard !Task.isCancelled, generation == self.dataLoadGeneration else { return }
 
+            let requestKey = self.scopeCacheKey(
+                query: query,
+                groupID: groupId,
+                type: typeRawValue.flatMap(ClipboardContentType.init(rawValue:)),
+                builtInGroup: pinnedOnly ? .favorites : nil
+            )
+            self.cacheScopePage(
+                page,
+                for: requestKey,
+                loadedCount: page.count,
+                hasMore: page.count == pageSize
+            )
+            guard self.activeScopeCacheKey == requestKey else { return }
+
             if replaceDisplayedWithPage {
                 self.mergeItems(page, prepend: true, enqueueLinkMetadata: false)
-                self.noteListContentReplacedWithoutAnimation()
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 transaction.animation = nil
@@ -436,11 +468,10 @@ extension ClipboardViewModel {
     func applyInitialHistoryPage(_ pageItems: [ClipboardItem], generation: UInt, mode: DataLoadMode) {
         guard generation == dataLoadGeneration else { return }
 
-        // 切回「全部」等路径：整表数据替换时同步掐动画。
+        // 切换 scope 时已经在 activateDisplayedScope 中 bump 过一次身份。
+        // DB 校正只更新 IDs，避免第二次重建 LazyHStack。
         if suppressListAnimations == false {
             noteListContentReplacedWithoutAnimation()
-        } else {
-            listContentEpoch &+= 1
         }
 
         let query = activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)

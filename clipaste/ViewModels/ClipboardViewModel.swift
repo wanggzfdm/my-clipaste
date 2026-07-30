@@ -131,6 +131,9 @@ final class ClipboardViewModel: ObservableObject {
     var isBulkHistoryLoading = false
     /// 真·按需分页游标（打开态不自动灌满全库）。
     var pagination = HistoryPaginationState(pageSize: historyPageSize)
+    /// 最近访问 scope 的首屏缓存，切换时先展示，再由 DB 静默校正。
+    let scopeCache = ClipboardScopeCache<ClipboardItem>()
+    var activeScopeCacheKey: ClipboardScopeKey?
     var itemIndexByID: [UUID: Int] = [:]
     var itemIndexByHash: [String: Int] = [:]
     var pendingLinkMetadataHashes: Set<String> = []

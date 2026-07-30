@@ -61,6 +61,7 @@ extension ClipboardViewModel {
     }
 
     func assignItemToGroup(item: ClipboardItem, group: ClipboardGroupItem) {
+        invalidateScopeCache(forGroupID: group.id)
         updateItem(id: item.id) { updatedItem in
             if updatedItem.groupIDs.contains(group.id) == false {
                 updatedItem.groupIDs.append(group.id)
@@ -85,6 +86,7 @@ extension ClipboardViewModel {
     }
 
     func deleteGroup(group: ClipboardGroupItem) {
+        invalidateScopeCache(forGroupID: group.id)
         if selectedGroupId == group.id {
             selectedGroupId = nil
         }
@@ -231,6 +233,12 @@ private extension ClipboardViewModel {
         currentFilter = filter
         selectedBuiltInGroup = builtInGroup
         selectedGroupId = groupID
+        activeScopeCacheKey = scopeCacheKey(
+            query: activeSearchQuery,
+            groupID: groupID,
+            type: filter,
+            builtInGroup: builtInGroup
+        )
 
         // 先掐死列表动画并重建 Lazy* 身份，再改数据。
         beginScopeSwitchAnimationSuppression()
@@ -289,6 +297,10 @@ private extension ClipboardViewModel {
 
     /// 内存能命中则立刻换到新 scope；命中为空则保持旧画面并打 loading，等 DB 页无动画替换。
     private func applyMemoryScopePreferringNonEmptyDisplay() {
+        if restoreCachedScopeIfAvailable() {
+            return
+        }
+
         let query = activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         let memoryIDs = items.compactMap { item -> UUID? in
             matchesCurrentDisplayScope(item, query: query) ? item.id : nil
@@ -307,6 +319,10 @@ private extension ClipboardViewModel {
 
     /// 切回「全部」等待 fullRefresh 时的即时展示策略。
     private func prepareAllScopeDisplayWhileReloading() {
+        if restoreCachedScopeIfAvailable() {
+            return
+        }
+
         isInitialHistoryLoading = true
         isLoadingMoreHistory = true
 

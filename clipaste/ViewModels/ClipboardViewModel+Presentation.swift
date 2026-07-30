@@ -163,6 +163,7 @@ extension ClipboardViewModel {
             items: allHeadItems,
             displayedIDs: allHeadIDs
         )
+        keepOnlyAllScopeCache()
 
         let retainCount = ClipboardHistoryWarmCache.defaultLimit
         // 即使总数不大，也标记下次需要 reconcile；有 snapshot 时首屏仍即时。
@@ -202,6 +203,7 @@ extension ClipboardViewModel {
             currentFilter = nil
             selectedBuiltInGroup = nil
             selectedGroupId = nil
+            activeScopeCacheKey = .all(query: activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines))
             if let snap = lastScopeSnapshot, snap.displayedIDs.isEmpty == false {
                 let available = Set(retained.map(\.id))
                 let headIDs = snap.displayedIDs.filter { available.contains($0) }
