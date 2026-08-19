@@ -142,6 +142,9 @@ extension ClipboardViewModel {
     private func releaseTransientResourcesAfterPanelClose() {
         highResImage = nil
         quickLookAnchorFramesByItemID.removeAll()
+        ClipboardImagePipeline.shared.invalidateAll()
+        ListRenderEngine.shared.invalidateAll()
+        AppIconManager.shared.invalidateAll()
 
         // 保存当前 scope 的首屏快照：下次打开直接恢复，不强制切回「全部」。
         let snapshotLimit = max(ClipboardHistoryWarmCache.defaultLimit, Self.displayMaterializeWindowSize)

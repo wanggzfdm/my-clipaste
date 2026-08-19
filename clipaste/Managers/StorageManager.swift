@@ -160,8 +160,8 @@ actor ClipboardSearcher {
                 appIconDominantColorHex: record.appIconDominantColorHex,
                 timestamp: record.timestamp,
                 plainText: truncatedText,
-                hasPreviewImage: record.previewImageData != nil,
-                hasImageData: record.imageData != nil,
+                hasPreviewImage: record.hasPreviewImageData,
+                hasImageData: record.hasOriginalImageData,
                 imageUTType: record.imageUTType,
                 imagePixelWidth: record.imagePixelWidth,
                 imagePixelHeight: record.imagePixelHeight,
@@ -170,9 +170,9 @@ actor ClipboardSearcher {
                 groupIdsRaw: record.groupIdsRaw,
                 customTitle: record.customTitle,
                 linkTitle: record.linkTitle,
-                hasLinkIcon: record.linkIconData != nil,
+                hasLinkIcon: record.hasLinkIconData,
                 isPinned: record.isPinned,
-                hasRTF: record.rtfData != nil || record.richTextArchiveData != nil,
+                hasRTF: record.hasRTFData || record.hasRichTextArchiveData,
                 sourcePlatformRawValue: record.sourcePlatformRawValue,
                 sourceDeviceName: record.sourceDeviceName,
                 captureMethodRawValue: record.captureMethodRawValue,
@@ -217,12 +217,15 @@ actor ClipboardSearcher {
             let limit = fetchLimit ?? items.count
             let start = min(offset, items.count)
             let end = min(start + limit, items.count)
+            // Drop registered models so external blobs are not retained after mapping.
+            modelContext.rollback()
             if start < end {
                 return Array(items[start..<end])
             }
             return []
         }
 
+        modelContext.rollback()
         return items
     }
 }
@@ -691,6 +694,10 @@ final class StorageManager {
         }
     }
 
+    func backfillExternalPresenceFlags(batchSize: Int = 48) async -> Int {
+        await storeActor.backfillExternalPresenceFlags(batchSize: batchSize)
+    }
+
     func importStoreExport(_ payload: ClipboardStoreExport) async throws {
         try await storeActor.importStoreExport(payload)
     }
@@ -909,10 +916,10 @@ actor ClipboardStoreActor {
         )
         descriptor.fetchLimit = 1
         if let record = try? modelContext.fetch(descriptor).first {
-            guard record.richTextArchiveData == nil else {
+            guard record.hasRichTextArchiveData == false else {
                 return
             }
-            record.rtfData = rtfData
+            record.setRTFDataKeepingPresence(rtfData)
             try? markSyncAnchorUpdated()
             try? modelContext.save()
         }
@@ -937,7 +944,7 @@ actor ClipboardStoreActor {
         descriptor.fetchLimit = 1
         if let record = try? modelContext.fetch(descriptor).first {
             if let title { record.linkTitle = title }
-            if let iconData { record.linkIconData = iconData }
+            if let iconData { record.setLinkIconDataKeepingPresence(iconData) }
             try? markSyncAnchorUpdated()
             try? modelContext.save()
         }
@@ -987,7 +994,7 @@ actor ClipboardStoreActor {
             return text.count > 500 ? String(text.prefix(500)) : text
         }()
 
-        return ClipboardRecordSnapshot(
+        let snapshot = ClipboardRecordSnapshot(
             id: record.id,
             contentHash: record.contentHash,
             bundleIdentifier: record.appBundleID,
@@ -995,8 +1002,8 @@ actor ClipboardStoreActor {
             appIconDominantColorHex: record.appIconDominantColorHex,
             timestamp: record.timestamp,
             plainText: truncatedText,
-            hasPreviewImage: record.previewImageData != nil,
-            hasImageData: record.imageData != nil,
+            hasPreviewImage: record.hasPreviewImageData,
+            hasImageData: record.hasOriginalImageData,
             imageUTType: record.imageUTType,
             imagePixelWidth: record.imagePixelWidth,
             imagePixelHeight: record.imagePixelHeight,
@@ -1005,14 +1012,16 @@ actor ClipboardStoreActor {
             groupIdsRaw: record.groupIdsRaw,
             customTitle: record.customTitle,
             linkTitle: record.linkTitle,
-            hasLinkIcon: record.linkIconData != nil,
+            hasLinkIcon: record.hasLinkIconData,
             isPinned: record.isPinned,
-            hasRTF: record.rtfData != nil || record.richTextArchiveData != nil,
+            hasRTF: record.hasRTFData || record.hasRichTextArchiveData,
             sourcePlatformRawValue: record.sourcePlatformRawValue,
             sourceDeviceName: record.sourceDeviceName,
             captureMethodRawValue: record.captureMethodRawValue,
             captureSessionID: record.captureSessionID
         )
+        modelContext.rollback()
+        return snapshot
     }
 
     func recordExists(hash: String) -> Bool {
@@ -1088,11 +1097,11 @@ actor ClipboardStoreActor {
                 )
 
                 if let previewImageData {
-                    existingRecord.previewImageData = previewImageData
+                    existingRecord.setPreviewImageDataKeepingPresence(previewImageData)
                 }
 
                 if let imageData {
-                    existingRecord.imageData = imageData
+                    existingRecord.setOriginalImageDataKeepingPresence(imageData)
                 }
 
                 if let imageMetadata {
@@ -1445,9 +1454,10 @@ actor ClipboardStoreActor {
             if let record = try modelContext.fetch(descriptor).first {
                 record.plainText = newText
                 if newRTFData != nil || newRichTextArchiveData != nil {
-                    record.rtfData = newRTFData
-                    record.richTextArchiveData = newRichTextArchiveData
+                    let archive = newRichTextArchiveData
                         ?? newRTFData.flatMap { ClipboardRichTextArchive.fromRTFData($0)?.encodedData() }
+                    record.setRTFDataKeepingPresence(newRTFData)
+                    record.setRichTextArchiveDataKeepingPresence(archive)
                 }
                 try markSyncAnchorUpdated()
                 try modelContext.save()
@@ -1808,17 +1818,27 @@ actor ClipboardStoreActor {
                 existingRecord.appIconDominantColorHex = incomingRecord.appIconDominantColorHex ?? existingRecord.appIconDominantColorHex
                 existingRecord.appIconData = incomingRecord.appIconData ?? existingRecord.appIconData
                 existingRecord.plainText = incomingRecord.plainText ?? existingRecord.plainText
-                existingRecord.previewImageData = incomingRecord.previewImageData ?? existingRecord.previewImageData
-                existingRecord.imageData = incomingRecord.imageData ?? existingRecord.imageData
+                existingRecord.setPreviewImageDataKeepingPresence(
+                    incomingRecord.previewImageData ?? existingRecord.previewImageData
+                )
+                existingRecord.setOriginalImageDataKeepingPresence(
+                    incomingRecord.imageData ?? existingRecord.imageData
+                )
                 existingRecord.imageUTType = incomingRecord.imageUTType ?? existingRecord.imageUTType
                 existingRecord.imageByteCount = incomingRecord.imageByteCount ?? existingRecord.imageByteCount
                 existingRecord.imagePixelWidth = incomingRecord.imagePixelWidth ?? existingRecord.imagePixelWidth
                 existingRecord.imagePixelHeight = incomingRecord.imagePixelHeight ?? existingRecord.imagePixelHeight
                 existingRecord.customTitle = incomingRecord.customTitle ?? existingRecord.customTitle
                 existingRecord.linkTitle = incomingRecord.linkTitle ?? existingRecord.linkTitle
-                existingRecord.linkIconData = incomingRecord.linkIconData ?? existingRecord.linkIconData
-                existingRecord.rtfData = incomingRecord.rtfData ?? existingRecord.rtfData
-                existingRecord.richTextArchiveData = incomingRecord.richTextArchiveData ?? existingRecord.richTextArchiveData
+                existingRecord.setLinkIconDataKeepingPresence(
+                    incomingRecord.linkIconData ?? existingRecord.linkIconData
+                )
+                existingRecord.setRTFDataKeepingPresence(
+                    incomingRecord.rtfData ?? existingRecord.rtfData
+                )
+                existingRecord.setRichTextArchiveDataKeepingPresence(
+                    incomingRecord.richTextArchiveData ?? existingRecord.richTextArchiveData
+                )
                 existingRecord.isPinned = existingRecord.isPinned || incomingRecord.isPinned
                 existingRecord.sourcePlatformRawValue = incomingRecord.sourcePlatformRawValue
                 existingRecord.sourceDeviceName = incomingRecord.sourceDeviceName ?? existingRecord.sourceDeviceName
@@ -1892,19 +1912,27 @@ actor ClipboardStoreActor {
     }
 
     func loadPreviewImageData(id: UUID) -> Data? {
-        fetchStoredRecord(id: id)?.previewImageData
+        let data = fetchStoredRecord(id: id)?.previewImageData
+        modelContext.rollback()
+        return data
     }
 
     func loadPlainText(id: UUID) -> String? {
-        fetchStoredRecord(id: id)?.plainText
+        let text = fetchStoredRecord(id: id)?.plainText
+        modelContext.rollback()
+        return text
     }
 
     func loadAppIconDominantColorHex(id: UUID) -> String? {
-        fetchStoredRecord(id: id)?.appIconDominantColorHex
+        let hex = fetchStoredRecord(id: id)?.appIconDominantColorHex
+        modelContext.rollback()
+        return hex
     }
 
     func loadAppIconData(id: UUID) -> Data? {
-        fetchStoredRecord(id: id)?.appIconData
+        let data = fetchStoredRecord(id: id)?.appIconData
+        modelContext.rollback()
+        return data
     }
 
     func loadPasteRecord(id: UUID) -> ClipboardPasteRecord? {
@@ -1912,36 +1940,99 @@ actor ClipboardStoreActor {
             return nil
         }
 
-        return ClipboardPasteRecord(
+        let paste = ClipboardPasteRecord(
             id: record.id,
             typeRawValue: record.typeRawValue,
             plainText: record.plainText,
             rtfData: record.rtfData,
             richTextArchiveData: record.richTextArchiveData
         )
+        modelContext.rollback()
+        return paste
     }
 
     func loadOriginalImageData(id: UUID) -> Data? {
-        fetchStoredRecord(id: id)?.imageData
+        let data = fetchStoredRecord(id: id)?.imageData
+        modelContext.rollback()
+        return data
     }
 
     func loadImageData(id: UUID) -> Data? {
-        if let record = fetchStoredRecord(id: id) {
-            return record.imageData ?? record.previewImageData
+        guard let record = fetchStoredRecord(id: id) else {
+            return nil
         }
-        return nil
+        let data = record.imageData ?? record.previewImageData
+        modelContext.rollback()
+        return data
     }
 
     func loadRTFData(id: UUID) -> Data? {
-        fetchStoredRecord(id: id)?.rtfData
+        let data = fetchStoredRecord(id: id)?.rtfData
+        modelContext.rollback()
+        return data
     }
 
     func loadLinkIconData(id: UUID) -> Data? {
-        fetchStoredRecord(id: id)?.linkIconData
+        let data = fetchStoredRecord(id: id)?.linkIconData
+        modelContext.rollback()
+        return data
     }
 
     func loadImageUTType(id: UUID) -> String? {
-        fetchStoredRecord(id: id)?.imageUTType
+        let type = fetchStoredRecord(id: id)?.imageUTType
+        modelContext.rollback()
+        return type
+    }
+
+    /// One-time/repair path: recompute presence flags from external blobs in batches.
+    /// Returns number of records whose flags changed.
+    func backfillExternalPresenceFlags(batchSize: Int = 48) -> Int {
+        var totalChanged = 0
+        var offset = 0
+        let size = max(batchSize, 1)
+
+        while true {
+            var descriptor = FetchDescriptor<ClipboardRecord>(
+                sortBy: [SortDescriptor(\.timestamp, order: .forward)]
+            )
+            descriptor.fetchLimit = size
+            descriptor.fetchOffset = offset
+
+            let batch = (try? modelContext.fetch(descriptor)) ?? []
+            guard batch.isEmpty == false else { break }
+
+            var changed = 0
+            for record in batch {
+                let before = ExternalPresenceFlags(
+                    hasPreviewImageData: record.hasPreviewImageData,
+                    hasOriginalImageData: record.hasOriginalImageData,
+                    hasLinkIconData: record.hasLinkIconData,
+                    hasRTFData: record.hasRTFData,
+                    hasRichTextArchiveData: record.hasRichTextArchiveData
+                )
+                record.resyncExternalPresenceFlagsFromBlobs()
+                let after = ExternalPresenceFlags(
+                    hasPreviewImageData: record.hasPreviewImageData,
+                    hasOriginalImageData: record.hasOriginalImageData,
+                    hasLinkIconData: record.hasLinkIconData,
+                    hasRTFData: record.hasRTFData,
+                    hasRichTextArchiveData: record.hasRichTextArchiveData
+                )
+                if before != after {
+                    changed += 1
+                }
+            }
+
+            if changed > 0 {
+                try? modelContext.save()
+            }
+            modelContext.rollback()
+            totalChanged += changed
+            offset += batch.count
+            if batch.count < size { break }
+        }
+
+        return totalChanged
     }
 }
 
@@ -2001,8 +2092,8 @@ private extension ClipboardStoreActor {
         }
 
         target.plainText = target.plainText ?? source.plainText
-        target.previewImageData = target.previewImageData ?? source.previewImageData
-        target.imageData = target.imageData ?? source.imageData
+        target.setPreviewImageDataKeepingPresence(target.previewImageData ?? source.previewImageData)
+        target.setOriginalImageDataKeepingPresence(target.imageData ?? source.imageData)
         target.imageUTType = target.imageUTType ?? source.imageUTType
         target.imageByteCount = target.imageByteCount ?? source.imageByteCount
         target.imagePixelWidth = target.imagePixelWidth ?? source.imagePixelWidth
@@ -2013,9 +2104,9 @@ private extension ClipboardStoreActor {
         target.appIconData = target.appIconData ?? source.appIconData
         target.customTitle = target.customTitle ?? source.customTitle
         target.linkTitle = target.linkTitle ?? source.linkTitle
-        target.linkIconData = target.linkIconData ?? source.linkIconData
-        target.rtfData = target.rtfData ?? source.rtfData
-        target.richTextArchiveData = target.richTextArchiveData ?? source.richTextArchiveData
+        target.setLinkIconDataKeepingPresence(target.linkIconData ?? source.linkIconData)
+        target.setRTFDataKeepingPresence(target.rtfData ?? source.rtfData)
+        target.setRichTextArchiveDataKeepingPresence(target.richTextArchiveData ?? source.richTextArchiveData)
 
         var mergedGroupIDs = normalizedGroupIDs(
             primaryGroupID: target.groupId,
@@ -2052,14 +2143,16 @@ private extension ClipboardStoreActor {
             && type != ClipboardContentType.fileURL.rawValue
 
         guard shouldRetainTextRepresentations else {
-            record.rtfData = nil
-            record.richTextArchiveData = nil
+            record.setRTFDataKeepingPresence(nil)
+            record.setRichTextArchiveDataKeepingPresence(nil)
             return
         }
 
-        record.rtfData = rtfData
-        record.richTextArchiveData = richTextArchiveData
-            ?? rtfData.flatMap { ClipboardRichTextArchive.fromRTFData($0)?.encodedData() }
+        record.setRTFDataKeepingPresence(rtfData)
+        record.setRichTextArchiveDataKeepingPresence(
+            richTextArchiveData
+                ?? rtfData.flatMap { ClipboardRichTextArchive.fromRTFData($0)?.encodedData() }
+        )
     }
 
     func fetchStoredRecord(id: UUID) -> ClipboardRecord? {

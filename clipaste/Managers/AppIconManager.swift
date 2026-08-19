@@ -14,6 +14,10 @@ final class AppIconManager {
         cache.totalCostLimit = 20 * 1024 * 1024 // 20MB
     }
 
+    func invalidateAll() {
+        cache.removeAllObjects()
+    }
+
     func getIcon(for bundleIdentifier: String) -> NSImage? {
         guard !bundleIdentifier.isEmpty else { return nil }
 

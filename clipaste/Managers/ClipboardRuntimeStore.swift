@@ -803,6 +803,7 @@ final class ClipboardRuntimeStore {
             NotificationCenter.default.post(name: .clipboardDataDidChange, object: nil)
             scheduleWarmCacheRefresh(using: runtime.storage, routeKey: rootIdentity)
         }
+        scheduleExternalPresenceBackfill(using: runtime.storage)
         updateForegroundSyncPolling()
         appendDiagnostic(
             level: .info,
@@ -1111,6 +1112,27 @@ final class ClipboardRuntimeStore {
         }
     }
 
+    private func scheduleExternalPresenceBackfill(using storage: StorageManager) {
+        let key = Keys.externalPresenceBackfillVersion
+        guard defaults.bool(forKey: key) == false else { return }
+
+        Task.detached(priority: .utility) {
+            let fixed = await storage.backfillExternalPresenceFlags()
+            await MainActor.run {
+                // Mark complete even if fixed==0 so we don't rescan every launch.
+                self.defaults.set(true, forKey: key)
+                if fixed > 0 {
+                    self.appendDiagnostic(
+                        level: .info,
+                        message: ClipboardSyncDiagnosticMessage(
+                            "Backfilled external presence flags on %lld records",
+                            arguments: [.count(fixed)]
+                        )
+                    )
+                }
+            }
+        }
+    }
     private func repairTextClassificationsIfNeeded(using storage: StorageManager) async -> Int {
         let currentVersion = ClipboardContentClassifier.repairVersion
         let storedVersion = defaults.integer(forKey: Keys.textClassificationRepairVersion)
@@ -1549,5 +1571,6 @@ private extension ClipboardRuntimeStore {
         static let textClassificationRepairVersion = "clipboard_text_classification_repair_version"
         static let appIconColorRepairVersion = "clipboard_app_icon_color_repair_version"
         static let appIconDataRepairVersion = "clipboard_app_icon_data_repair_version"
+        static let externalPresenceBackfillVersion = "clipboard_external_presence_backfill_v1"
     }
 }

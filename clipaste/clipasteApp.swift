@@ -61,6 +61,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 提前构建隐藏面板与其 SwiftUI 视图树，让首屏展示前就完成
         // ViewModel 初始化、warm cache 订阅与基础窗口准备，减少第一次呼出时的白屏等待。
         ClipboardPanelManager.shared.preparePanelIfNeeded()
+        ClipboardMemoryPressureMonitor.shared.start()
 
         lastObservedAppLanguageRaw = normalizedAppLanguageStorageRaw()
 

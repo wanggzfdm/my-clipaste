@@ -30,6 +30,12 @@ final class ClipboardScopeCache<Item> {
         self.capacity = max(capacity, 1)
     }
 
+    // Explicit deinit avoids a Swift 6.3 Release inliner crash on generic class destroy.
+    @inline(never)
+    deinit {
+        entries.removeAll(keepingCapacity: false)
+    }
+
     func snapshot(for key: ClipboardScopeKey) -> ClipboardScopeSnapshot<Item>? {
         guard var entry = entries[key] else { return nil }
 

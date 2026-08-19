@@ -10,6 +10,9 @@ final class ClipboardRecord {
     var plainText: String?
     @Attribute(.externalStorage) var previewImageData: Data?
     @Attribute(.externalStorage) var imageData: Data?
+    /// Lightweight presence flags — list paths must use these instead of touching blobs.
+    var hasPreviewImageData: Bool = false
+    var hasOriginalImageData: Bool = false
     var imageUTType: String?
     var imageByteCount: Int?
     var imagePixelWidth: Int?
@@ -23,9 +26,12 @@ final class ClipboardRecord {
     var customTitle: String? // 用户手动添加的标题
     var linkTitle: String? // 链接预览：网页标题
     @Attribute(.externalStorage) var linkIconData: Data? // 链接预览：网站图标数据
+    var hasLinkIconData: Bool = false
     var isPinned: Bool = false // 固定状态
     @Attribute(.externalStorage) var rtfData: Data? // 预览/编辑使用的 RTF（原始 RTF 或后台回退生成）
     @Attribute(.externalStorage) var richTextArchiveData: Data? // 原始富格式集合（HTML/RTF/RTFD/Tabular Text）
+    var hasRTFData: Bool = false
+    var hasRichTextArchiveData: Bool = false
     var sourcePlatformRawValue: String = "macOS"
     var sourceDeviceName: String?
     var captureMethodRawValue: String = "monitor"
@@ -84,5 +90,14 @@ final class ClipboardRecord {
         self.sourceDeviceName = sourceDeviceName
         self.captureMethodRawValue = captureMethodRawValue
         self.captureSessionID = captureSessionID
+        apply(
+            ExternalPresenceFlags.make(
+                preview: previewImageData,
+                image: imageData,
+                linkIcon: linkIconData,
+                rtf: rtfData,
+                archive: richTextArchiveData
+            )
+        )
     }
 }
