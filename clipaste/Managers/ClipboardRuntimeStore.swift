@@ -231,6 +231,7 @@ final class ClipboardRuntimeStore {
             )
         )
         scheduleWarmCacheRefresh(using: runtime.storage, routeKey: rootIdentity)
+        scheduleExternalPresenceBackfill(using: runtime.storage)
 
         ClipboardMonitor.shared.startMonitoring()
 
