@@ -1116,20 +1116,22 @@ final class ClipboardRuntimeStore {
         let key = Keys.externalPresenceBackfillVersion
         guard defaults.bool(forKey: key) == false else { return }
 
-        Task.detached(priority: .utility) {
+        // Mark before work so a hung actor cannot re-trigger this every launch.
+        // SQL backfill is cheap/idempotent if a future key bump forces another pass.
+        defaults.set(true, forKey: key)
+        defaults.synchronize()
+
+        Task.detached(priority: .utility) { [weak self] in
             let fixed = await storage.backfillExternalPresenceFlags()
+            guard let self, fixed > 0 else { return }
             await MainActor.run {
-                // Mark complete even if fixed==0 so we don't rescan every launch.
-                self.defaults.set(true, forKey: key)
-                if fixed > 0 {
-                    self.appendDiagnostic(
-                        level: .info,
-                        message: ClipboardSyncDiagnosticMessage(
-                            "Backfilled external presence flags on %lld records",
-                            arguments: [.count(fixed)]
-                        )
+                self.appendDiagnostic(
+                    level: .info,
+                    message: ClipboardSyncDiagnosticMessage(
+                        "Backfilled external presence flags on %lld records",
+                        arguments: [.count(fixed)]
                     )
-                }
+                )
             }
         }
     }

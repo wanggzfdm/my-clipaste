@@ -695,7 +695,23 @@ final class StorageManager {
     }
 
     func backfillExternalPresenceFlags(batchSize: Int = 48) async -> Int {
-        await storeActor.backfillExternalPresenceFlags(batchSize: batchSize)
+        _ = batchSize
+        // Run outside the long-lived ModelActor context and use known store URLs.
+        let urls = [
+            ClipboardModelContainerFactory.localStoreURL,
+            ClipboardModelContainerFactory.cloudStoreURL
+        ]
+        var totalChanged = 0
+        for url in urls where FileManager.default.fileExists(atPath: url.path) {
+            do {
+                totalChanged += try ExternalPresenceSQLBackfill.apply(to: url)
+            } catch {
+                print("❌ [StorageManager] SQL presence backfill failed for \(url.lastPathComponent): \(error)")
+            }
+        }
+        // Best-effort; do not block completion / defaults marking on actor queue.
+        Task { await self.storeActor.discardRegisteredObjects() }
+        return totalChanged
     }
 
     func importStoreExport(_ payload: ClipboardStoreExport) async throws {
@@ -1481,21 +1497,34 @@ actor ClipboardStoreActor {
     }
 
     func repairDuplicateRecords() -> Int {
-        let descriptor = FetchDescriptor<ClipboardRecord>()
-
+        // Avoid materializing the entire history into the long-lived ModelContext.
+        // Full-table fetch of ClipboardRecord faults external blobs into process memory.
+        let storeURL = modelContainer.configurations.first?.url
+            ?? ClipboardModelContainerFactory.localStoreURL
+        let duplicateHashes: [String]
         do {
-            let records = try modelContext.fetch(descriptor)
-            var recordsByHash: [String: [ClipboardRecord]] = [:]
+            duplicateHashes = try ExternalPresenceSQLBackfill.duplicateContentHashes(in: storeURL)
+        } catch {
+            print("⚠️ [ClipboardStoreActor] duplicate hash probe failed, skipping: \(error)")
+            return 0
+        }
 
-            for record in records {
-                let contentHash = record.contentHash.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard contentHash.isEmpty == false else { continue }
-                recordsByHash[contentHash, default: []].append(record)
-            }
+        guard duplicateHashes.isEmpty == false else {
+            return 0
+        }
 
-            var repairedCount = 0
+        var repairedCount = 0
+        do {
+            for contentHash in duplicateHashes {
+                let hash = contentHash
+                var descriptor = FetchDescriptor<ClipboardRecord>(
+                    predicate: #Predicate<ClipboardRecord> { record in
+                        record.contentHash == hash
+                    }
+                )
+                let duplicates = try modelContext.fetch(descriptor)
+                guard duplicates.count > 1 else { continue }
 
-            for duplicates in recordsByHash.values where duplicates.count > 1 {
                 let orderedRecords = duplicates.sorted(by: shouldPreferSurvivor)
                 guard let survivor = orderedRecords.first else { continue }
 
@@ -1510,10 +1539,11 @@ actor ClipboardStoreActor {
                 try markSyncAnchorUpdated()
                 try modelContext.save()
             }
-
+            modelContext.rollback()
             return repairedCount
         } catch {
             print("❌ [ClipboardStoreActor] 修复重复记录失败: \(error)")
+            modelContext.rollback()
             return 0
         }
     }
@@ -1984,56 +2014,26 @@ actor ClipboardStoreActor {
         return type
     }
 
-    /// One-time/repair path: recompute presence flags from external blobs in batches.
-    /// Returns number of records whose flags changed.
-    func backfillExternalPresenceFlags(batchSize: Int = 48) -> Int {
-        var totalChanged = 0
-        var offset = 0
-        let size = max(batchSize, 1)
-
-        while true {
-            var descriptor = FetchDescriptor<ClipboardRecord>(
-                sortBy: [SortDescriptor(\.timestamp, order: .forward)]
-            )
-            descriptor.fetchLimit = size
-            descriptor.fetchOffset = offset
-
-            let batch = (try? modelContext.fetch(descriptor)) ?? []
-            guard batch.isEmpty == false else { break }
-
-            var changed = 0
-            for record in batch {
-                let before = ExternalPresenceFlags(
-                    hasPreviewImageData: record.hasPreviewImageData,
-                    hasOriginalImageData: record.hasOriginalImageData,
-                    hasLinkIconData: record.hasLinkIconData,
-                    hasRTFData: record.hasRTFData,
-                    hasRichTextArchiveData: record.hasRichTextArchiveData
-                )
-                record.resyncExternalPresenceFlagsFromBlobs()
-                let after = ExternalPresenceFlags(
-                    hasPreviewImageData: record.hasPreviewImageData,
-                    hasOriginalImageData: record.hasOriginalImageData,
-                    hasLinkIconData: record.hasLinkIconData,
-                    hasRTFData: record.hasRTFData,
-                    hasRichTextArchiveData: record.hasRichTextArchiveData
-                )
-                if before != after {
-                    changed += 1
-                }
-            }
-
-            if changed > 0 {
-                try? modelContext.save()
-            }
-            modelContext.rollback()
-            totalChanged += changed
-            offset += batch.count
-            if batch.count < size { break }
-        }
-
-        return totalChanged
+    /// Drop registered models without writing.
+    func discardRegisteredObjects() {
+        modelContext.rollback()
     }
+
+    /// Prefer StorageManager SQL entrypoint; kept for direct actor callers.
+    func backfillExternalPresenceFlags(batchSize: Int = 48) -> Int {
+        _ = batchSize
+        let storeURL = modelContainer.configurations.first?.url
+            ?? ClipboardModelContainerFactory.localStoreURL
+        do {
+            let changed = try ExternalPresenceSQLBackfill.apply(to: storeURL)
+            modelContext.rollback()
+            return changed
+        } catch {
+            print("❌ [ClipboardStoreActor] SQL presence backfill failed: \(error)")
+            return 0
+        }
+    }
+
 }
 
 private extension ClipboardStoreActor {
@@ -2092,8 +2092,13 @@ private extension ClipboardStoreActor {
         }
 
         target.plainText = target.plainText ?? source.plainText
-        target.setPreviewImageDataKeepingPresence(target.previewImageData ?? source.previewImageData)
-        target.setOriginalImageDataKeepingPresence(target.imageData ?? source.imageData)
+        // Prefer presence flags so we do not fault external blobs unnecessarily.
+        if target.hasPreviewImageData == false, source.hasPreviewImageData {
+            target.setPreviewImageDataKeepingPresence(source.previewImageData)
+        }
+        if target.hasOriginalImageData == false, source.hasOriginalImageData {
+            target.setOriginalImageDataKeepingPresence(source.imageData)
+        }
         target.imageUTType = target.imageUTType ?? source.imageUTType
         target.imageByteCount = target.imageByteCount ?? source.imageByteCount
         target.imagePixelWidth = target.imagePixelWidth ?? source.imagePixelWidth
@@ -2101,12 +2106,20 @@ private extension ClipboardStoreActor {
         target.appBundleID = target.appBundleID ?? source.appBundleID
         target.appLocalizedName = target.appLocalizedName ?? source.appLocalizedName
         target.appIconDominantColorHex = target.appIconDominantColorHex ?? source.appIconDominantColorHex
-        target.appIconData = target.appIconData ?? source.appIconData
+        if target.appIconData == nil {
+            target.appIconData = source.appIconData
+        }
         target.customTitle = target.customTitle ?? source.customTitle
         target.linkTitle = target.linkTitle ?? source.linkTitle
-        target.setLinkIconDataKeepingPresence(target.linkIconData ?? source.linkIconData)
-        target.setRTFDataKeepingPresence(target.rtfData ?? source.rtfData)
-        target.setRichTextArchiveDataKeepingPresence(target.richTextArchiveData ?? source.richTextArchiveData)
+        if target.hasLinkIconData == false, source.hasLinkIconData {
+            target.setLinkIconDataKeepingPresence(source.linkIconData)
+        }
+        if target.hasRTFData == false, source.hasRTFData {
+            target.setRTFDataKeepingPresence(source.rtfData)
+        }
+        if target.hasRichTextArchiveData == false, source.hasRichTextArchiveData {
+            target.setRichTextArchiveDataKeepingPresence(source.richTextArchiveData)
+        }
 
         var mergedGroupIDs = normalizedGroupIDs(
             primaryGroupID: target.groupId,
