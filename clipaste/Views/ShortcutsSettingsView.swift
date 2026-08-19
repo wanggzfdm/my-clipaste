@@ -3,8 +3,6 @@ import SwiftUI
 
 struct ShortcutsSettingsView: View {
     @EnvironmentObject private var viewModel: SettingsViewModel
-    @AppStorage(GlobalSelectionTranslationService.isEnabledDefaultsKey)
-    private var isGlobalSelectedTextTranslationEnabled = false
 
     var body: some View {
         Form {
@@ -23,17 +21,8 @@ private extension ShortcutsSettingsView {
     var globalShortcutsSection: some View {
         Section {
             ShortcutRecorderRow("显示 / 隐藏剪贴板面板", name: .toggleClipboardPanel)
-
-            Toggle("启用全局选中文本翻译", isOn: $isGlobalSelectedTextTranslationEnabled)
-
-            ShortcutRecorderRow("翻译选中文本", name: .translateSelectedText)
-                .disabled(!isGlobalSelectedTextTranslationEnabled)
         } header: {
             SettingsSectionHeader(title: "全局快捷键")
-        } footer: {
-            SettingsSectionFooter {
-                Text("开启后，可在其他 App 中选中文本并使用快捷键翻译。此功能需要辅助功能权限，并会在必要时临时复制选中文本后恢复剪贴板。")
-            }
         }
     }
 }
@@ -90,7 +79,6 @@ private extension ShortcutsSettingsView {
         Section {
             Button {
                 KeyboardShortcuts.reset(.toggleClipboardPanel)
-                KeyboardShortcuts.reset(.translateSelectedText)
                 PanelShortcutStore.reset()
             } label: {
                 Label("Reset Shortcuts to Defaults", systemImage: "arrow.counterclockwise")

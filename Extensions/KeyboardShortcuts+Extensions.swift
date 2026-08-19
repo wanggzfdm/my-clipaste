@@ -6,9 +6,4 @@ extension KeyboardShortcuts.Name {
         "toggleClipboardPanel",
         default: .init(.c, modifiers: [.command, .shift])
     )
-
-    static let translateSelectedText = Self(
-        "translateSelectedText",
-        default: .init(.space, modifiers: [.control, .shift])
-    )
 }

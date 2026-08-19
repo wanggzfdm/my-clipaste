@@ -64,33 +64,6 @@ class ClipboardPanelManager {
         panelViewModel.primePanelContentForImmediatePresentation()
     }
 
-    func presentGlobalSelectionTranslation(text: String, sourceApp: NSRunningApplication?) {
-        let sourceAppName = sourceApp?.localizedName ?? String(localized: "Selected Text")
-        guard let configuration = AISettingsViewModel.shared.activeConfiguration else {
-            showGlobalSelectionTranslationUnavailableNotice()
-            NotificationCenter.default.post(name: .openSettingsIntent, object: nil)
-            return
-        }
-
-        AIConversationWindowManager.shared.openTranslation(
-            title: sourceAppName,
-            configuration: configuration,
-            sourceText: text
-        )
-    }
-
-    @discardableResult
-    func translateCurrentPanelSelectionIfPossible() -> Bool {
-        guard isVisible else { return false }
-        panelViewModel.openTranslationWindowForCurrentPreviewSelection()
-        return true
-    }
-
-    func showGlobalSelectionTranslationUnavailableNotice() {
-        guard isVisible else { return }
-        panelViewModel.operationNotice = String(localized: "No text selected")
-    }
-
     private func setupPanel() {
         let styleMask: NSWindow.StyleMask = [.borderless]
 

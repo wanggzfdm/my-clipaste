@@ -13,8 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let onboardingDefaultsKey = "hasCompletedOnboarding"
     private let hideMenuBarIconDefaultsKey = "hideMenuBarIcon"
     private let globalShortcutNames: [KeyboardShortcuts.Name] = [
-        .toggleClipboardPanel,
-        .translateSelectedText
+        .toggleClipboardPanel
     ]
     nonisolated(unsafe) private var onboardingStateObserver: NSObjectProtocol?
     private var lastKnownOnboardingState = false
@@ -31,8 +30,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         UserDefaults.standard.register(defaults: [
             "singleClickPaste": true,
-            "autoPasteToActiveApp": true,
-            GlobalSelectionTranslationService.isEnabledDefaultsKey: false
+            "autoPasteToActiveApp": true
         ])
 
         if let appIcon = NSImage(named: "AppIcon") {
@@ -115,11 +113,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         KeyboardShortcuts.onKeyDown(for: .toggleClipboardPanel) { [weak self] in
             self?.handleTogglePanelShortcut()
         }
-
-        KeyboardShortcuts.onKeyUp(for: .translateSelectedText) {
-            GlobalSelectionTranslationService.shared.translateFrontmostSelection()
-        }
-
         // NOTE: All other panel-related shortcuts (toggle layout, next/previous list, toggle
         // favorite, clear history, Cmd+Backspace delete) are intentionally NOT registered here.
         // KeyboardShortcuts uses a system-wide CGEventTap, so any registered binding is consumed
