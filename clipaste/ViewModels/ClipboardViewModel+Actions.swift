@@ -144,7 +144,7 @@ extension ClipboardViewModel {
         )
     }
 
-    func pasteToActiveApp(item: ClipboardItem) {
+    func pasteToActiveApp(item: ClipboardItem, forceAutoPaste: Bool = false) {
         if suppressedPasteItemIDs.remove(item.id) != nil {
             return
         }
@@ -167,7 +167,7 @@ extension ClipboardViewModel {
 
             ClipboardPanelManager.shared.forceHidePanel()
 
-            let autoPaste = UserDefaults.standard.object(forKey: "autoPasteToActiveApp") as? Bool ?? true
+            let autoPaste = forceAutoPaste || (UserDefaults.standard.object(forKey: "autoPasteToActiveApp") as? Bool ?? true)
             if autoPaste {
                 guard PasteEngine.shared.checkAccessibilityPermissions() else {
                     return

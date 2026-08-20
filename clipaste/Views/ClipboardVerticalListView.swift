@@ -7,7 +7,7 @@ struct ClipboardVerticalListView: View {
     @AppStorage("clipboardLayout") private var clipboardLayout: AppLayoutMode = .horizontal
     @AppStorage("previewPanelMode") private var previewPanelMode: PreviewPanelMode = .disabled
     @AppStorage("autoPreview") private var autoPreview = true
-
+    @AppStorage("appTheme") private var appTheme: AppTheme = .system
     @State private var previewPanelViewModel = ClipboardPreviewPanelViewModel()
     @State private var quickPasteIndexesByItemID: [UUID: Int] = [:]
 
@@ -112,21 +112,9 @@ struct ClipboardVerticalListView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     LazyVStack(spacing: itemSpacing) {
                         ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                            ClipboardVerticalItemView(
+                            verticalItem(
                                 item: item,
-                                viewModel: viewModel,
-                                quickPasteIndex: quickPasteIndexesByItemID[item.id],
-                                usesPreviewPanel: isPreviewEnabled,
-                                allowsAutoPreview: clipboardLayout == .vertical,
-                                onHoverChange: { isHovering in
-                                    previewPanelViewModel.handleHoverChange(
-                                        for: item,
-                                        isHovering: isHovering,
-                                        items: items,
-                                        selectedItemIDs: viewModel.selectedItemIDs,
-                                        isPreviewEnabled: shouldAutoPreview
-                                    )
-                                }
+                                index: index
                             )
                                 .id(item.id)
                                 .clipboardQuickPasteVisibleFrame(
@@ -175,6 +163,40 @@ struct ClipboardVerticalListView: View {
             }
         }
         // 材质由 ClipboardMainView 最外层统一提供，此处不做局部 background
+    }
+
+    @ViewBuilder
+    private func verticalItem(item: ClipboardItem, index: Int) -> some View {
+        let quickPasteIndex = quickPasteIndexesByItemID[item.id]
+        let onHover: (Bool) -> Void = { isHovering in
+            previewPanelViewModel.handleHoverChange(
+                for: item,
+                isHovering: isHovering,
+                items: items,
+                selectedItemIDs: viewModel.selectedItemIDs,
+                isPreviewEnabled: shouldAutoPreview
+            )
+        }
+
+        if appTheme.panelVisualStyle == .paste {
+            ClipboardPasteVerticalItemView(
+                item: item,
+                viewModel: viewModel,
+                quickPasteIndex: quickPasteIndex,
+                usesPreviewPanel: isPreviewEnabled,
+                allowsAutoPreview: clipboardLayout == .vertical,
+                onHoverChange: onHover
+            )
+        } else {
+            ClipboardVerticalItemView(
+                item: item,
+                viewModel: viewModel,
+                quickPasteIndex: quickPasteIndex,
+                usesPreviewPanel: isPreviewEnabled,
+                allowsAutoPreview: clipboardLayout == .vertical,
+                onHoverChange: onHover
+            )
+        }
     }
 
     private func updateQuickPasteIndexes(

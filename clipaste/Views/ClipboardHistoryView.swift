@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import SwiftData
 
 struct ClipboardHistoryView: View {
@@ -15,18 +16,26 @@ struct ClipboardHistoryView: View {
 struct VisualEffectView: NSViewRepresentable {
     let material: NSVisualEffectView.Material
     let blendingMode: NSVisualEffectView.BlendingMode
+    var isEmphasized: Bool = true
     
     func makeNSView(context: Context) -> NSVisualEffectView {
         let visualEffectView = NSVisualEffectView()
-        visualEffectView.material = material
-        visualEffectView.blendingMode = blendingMode
-        visualEffectView.state = .active
+        configure(visualEffectView)
         return visualEffectView
     }
     
     func updateNSView(_ visualEffectView: NSVisualEffectView, context: Context) {
+        configure(visualEffectView)
+    }
+
+    private func configure(_ visualEffectView: NSVisualEffectView) {
         visualEffectView.material = material
         visualEffectView.blendingMode = blendingMode
+        // Keep blur active even when the panel is not key, matching fork glass feel.
+        visualEffectView.state = .active
+        visualEffectView.isEmphasized = isEmphasized
+        visualEffectView.wantsLayer = true
+        visualEffectView.layer?.backgroundColor = NSColor.clear.cgColor
     }
 }
 

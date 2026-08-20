@@ -5,6 +5,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
     case system = "system"
     case light = "light"
     case dark = "dark"
+    /// Fork 2.1.5-inspired glass panel chrome (fixed dark).
+    case paste = "paste"
 
     var id: String { rawValue }
 
@@ -16,6 +18,8 @@ enum AppTheme: String, CaseIterable, Identifiable {
             return "Light"
         case .dark:
             return "Dark"
+        case .paste:
+            return "Paste Style"
         }
     }
 
@@ -25,7 +29,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
             return nil
         case .light:
             return .light
-        case .dark:
+        case .dark, .paste:
             return .dark
         }
     }
@@ -36,7 +40,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
             return nil
         case .light:
             return .aqua
-        case .dark:
+        case .dark, .paste:
             return .darkAqua
         }
     }
@@ -44,6 +48,10 @@ enum AppTheme: String, CaseIterable, Identifiable {
     var nsAppearance: NSAppearance? {
         guard let nsAppearanceName else { return nil }
         return Self.appearanceCache[nsAppearanceName]
+    }
+
+    var panelVisualStyle: PanelVisualStyle {
+        self == .paste ? .paste : .standard
     }
 
     private static let appearanceCache: [NSAppearance.Name: NSAppearance] = {

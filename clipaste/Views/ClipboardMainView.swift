@@ -9,6 +9,7 @@ struct ClipboardMainView: View {
     @Environment(ClipboardRuntimeStore.self) private var runtimeStore
     @Environment(ScreenPinViewModel.self) private var screenPinViewModel
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.colorScheme) private var colorScheme
     @StateObject var viewModel = ClipboardViewModel()
     @AppStorage("clipboardLayout") private var clipboardLayout: AppLayoutMode = .horizontal
     @AppStorage(PreviewPanelMode.defaultsKey) private var previewPanelMode: PreviewPanelMode = .disabled
@@ -33,12 +34,12 @@ struct ClipboardMainView: View {
         Group {
             if clipboardLayout == .horizontal {
                 VStack(spacing: 0) {
-                    ClipboardHeaderView(viewModel: viewModel, focusedField: _focusedField)
+                    headerView
                     mainContent
                 }
             } else {
                 VStack(spacing: 0) {
-                    ClipboardHeaderView(viewModel: viewModel, focusedField: _focusedField)
+                    headerView
                     mainContent
                     historyPreviewFooter
                 }
@@ -46,11 +47,28 @@ struct ClipboardMainView: View {
         }
     }
 
+    @ViewBuilder
+    private var headerView: some View {
+        if appTheme.panelVisualStyle == .paste {
+            ClipboardPasteHeaderView(viewModel: viewModel, focusedField: _focusedField)
+        } else {
+            ClipboardHeaderView(viewModel: viewModel, focusedField: _focusedField)
+        }
+    }
+
+    private var panelChrome: PanelChromeTokens {
+        appTheme.chrome
+    }
+
     private var configuredContent: some View {
-        panelLayoutContent
+        let panelShape = RoundedRectangle(cornerRadius: panelCornerRadiusValue, style: .continuous)
+        return panelLayoutContent
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.clear)
-            .background(VisualEffectView(material: .popover, blendingMode: .behindWindow))
+            // Keep content transparent so behind-window glass can show through gaps.
+            .background {
+                panelBackground
+                    .clipShape(panelShape)
+            }
             .background(
                 ClipboardPanelWindowObserver(
                     onWindowDidBecomeKey: handlePanelDidBecomeKey,
@@ -66,8 +84,18 @@ struct ClipboardMainView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: (clipboardLayout == .vertical || clipboardLayout == .compact) ? 14 : 0))
+            .clipShape(panelShape)
+            .overlay {
+                if appTheme.panelVisualStyle == .paste {
+                    panelShape
+                        .strokeBorder(
+                            Color.white.opacity(colorScheme == .dark ? 0.14 : 0.28),
+                            lineWidth: 0.7
+                        )
+                }
+            }
             .ignoresSafeArea()
+            .preferredColorScheme(appTheme.colorScheme)
             .animation(.spring(response: 0.24, dampingFraction: 0.9), value: currentOperationNotice != nil)
             .onChange(of: clipboardLayout) {
                 // Only resize the AppKit panel after the AppStorage-backed SwiftUI layout
@@ -152,8 +180,70 @@ struct ClipboardMainView: View {
     }
 
     @ViewBuilder
+    private var panelBackground: some View {
+        if appTheme.panelVisualStyle == .paste {
+            PastePanelBackgroundGlass(
+                isHorizontal: clipboardLayout == .horizontal
+            )
+        } else if clipboardLayout == .horizontal {
+            VisualEffectView(material: .popover, blendingMode: .behindWindow)
+        } else {
+            VisualEffectView(material: .popover, blendingMode: .behindWindow)
+        }
+    }
+
+    private var panelCornerRadiusValue: CGFloat {
+        if appTheme.panelVisualStyle == .paste {
+            return (clipboardLayout == .vertical || clipboardLayout == .compact) ? 14 : 26
+        }
+        return panelChrome.panelCornerRadius(layout: clipboardLayout)
+    }
+
+    @ViewBuilder
     private var mainContent: some View {
-        if displayedItems.isEmpty {
+        if appTheme.panelVisualStyle == .paste {
+            // fork 2.1.5: SearchResultsTransition + identity empty/list swap
+            SearchResultsTransitionContainer(
+                isActive: viewModel.isSearchFilteringActive,
+                token: SearchResultsTransitionToken(
+                    query: viewModel.activeSearchQuery,
+                    itemIDs: displayedItemIDs
+                )
+            ) {
+                ZStack {
+                    if displayedItems.isEmpty == false {
+                        Group {
+                            switch clipboardLayout {
+                            case .horizontal:
+                                ClipboardHorizontalView(
+                                    viewModel: viewModel,
+                                    items: displayedItems,
+                                    focusedField: _focusedField
+                                )
+                            case .vertical, .compact:
+                                ClipboardVerticalListView(
+                                    viewModel: viewModel,
+                                    items: displayedItems,
+                                    focusedField: _focusedField
+                                )
+                            }
+                        }
+                        .transition(.identity)
+                    }
+
+                    if displayedItems.isEmpty {
+                        ClipboardEmptyStateView(viewModel: viewModel)
+                            .transition(.identity)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .animation(nil, value: displayedItems.isEmpty)
+                .animation(nil, value: viewModel.selectedGroupId)
+                .animation(nil, value: viewModel.currentFilter)
+                .animation(nil, value: viewModel.selectedBuiltInGroup)
+                .transaction { $0.disablesAnimations = true }
+            }
+        } else if displayedItems.isEmpty {
             ClipboardEmptyStateView(viewModel: viewModel)
         } else {
             switch clipboardLayout {

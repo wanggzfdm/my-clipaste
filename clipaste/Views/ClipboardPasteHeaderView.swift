@@ -1,23 +1,25 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ClipboardHeaderView: View {
+struct ClipboardPasteHeaderView: View {
     private enum HorizontalSearchLayout {
         static let fieldHeight: CGFloat = 28
         static let collapsedWidth: CGFloat = fieldHeight
         static let expandedWidth: CGFloat = 240
         static let horizontalPadding: CGFloat = 12
         static let contentSpacing: CGFloat = 8
+        /// Search chrome ↔ favorites/group bar spacing (collapsed and expanded share this value).
+        static let groupBarSpacing: CGFloat = 6
     }
 
     @ObservedObject var viewModel: ClipboardViewModel
     @Environment(\.openSettings) private var openSettings
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var preferencesStore: AppPreferencesStore
     @FocusState var focusedField: ClipboardPanelFocusField?
     @AppStorage("clipboardLayout") private var clipboardLayout: AppLayoutMode = .horizontal
     @AppStorage("appLanguage") private var appLanguage: AppLanguage = .auto
     @AppStorage("appAccentColor") private var appAccentColor: AppAccentColor = .defaultValue
-    @AppStorage("appTheme") private var appTheme: AppTheme = .system
     @AppStorage("isPanelPinned") private var isPanelPinned: Bool = false
     @AppStorage("isMonitoringPaused") private var isMonitoringPaused: Bool = false
     @AppStorage("monitorInterval") private var monitorInterval: Double = 0.5
@@ -26,11 +28,16 @@ struct ClipboardHeaderView: View {
     @State private var targetedGroupId: String? = nil
     @State private var targetedBuiltInGroup: ClipboardBuiltInGroup? = nil
     @State private var groupTabFrames: [String: CGRect] = [:]
+    @State private var scrollableGroupTabsContentWidth: CGFloat = 0
     @State private var reorderTarget: GroupReorderTarget? = nil
     @State private var isShowingGroupOverflowPopover = false
     @State private var isShowingAIModelPopover = false
     @State private var isAIModelSubmenuHovered = false
     @State private var aiSettingsViewModel = AISettingsViewModel.shared
+    /// Local chrome expand state — kept separate from `@FocusState` so layout
+    /// animation does not run inside the focus transaction. Group-bar AppKit
+    /// content still disables animation interpolation via `.transaction`.
+    @State private var isSearchChromeExpanded = false
 
     // MARK: - 重命名 / 删除分组弹窗控制
     @State private var groupToEdit: ClipboardGroupItem? = nil
@@ -72,7 +79,7 @@ struct ClipboardHeaderView: View {
                 horizontalHeader
             }
         }
-        .padding(.bottom, isCompactMode ? 4 : 8)
+        .padding(.bottom, isVerticalLayout ? (isCompactMode ? 4 : 8) : 0)
         .background(headerBackground)
         .popover(isPresented: $showEditPopover, arrowEdge: .bottom) {
             editGroupPopover
@@ -109,18 +116,7 @@ struct ClipboardHeaderView: View {
     private var headerBackground: some View {
         if isVerticalLayout {
             WindowDragArea()
-                .background {
-                    if appTheme.panelVisualStyle == .paste {
-                        VisualEffectView(material: .hudWindow, blendingMode: .withinWindow)
-                            .opacity(0.55)
-                    } else {
-                        Rectangle().fill(.regularMaterial)
-                    }
-                }
-        } else if appTheme.panelVisualStyle == .paste {
-            // Horizontal paste: translucent drag strip so glass panel shows through.
-            WindowDragArea()
-                .background(Color.white.opacity(0.03))
+                .background(.regularMaterial)
         } else {
             Color.clear
         }
@@ -153,18 +149,20 @@ struct ClipboardHeaderView: View {
 
             Spacer(minLength: 20)
 
-            HStack(spacing: 6) {
+            HStack(spacing: HorizontalSearchLayout.groupBarSpacing) {
+                horizontalSearchBar
+
                 horizontalHybridGroupBar
                     .layoutPriority(1)
-
-                horizontalSearchBar
+                    // Search width animates; do not interpolate AppKit-hosted tab frames.
+                    .transaction { $0.disablesAnimations = true }
             }
 
             Spacer(minLength: 20)
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
-        .padding(.top, 12)
+        .padding(.top, 8)
         .padding(.bottom, 4)
     }
 
@@ -181,14 +179,16 @@ struct ClipboardHeaderView: View {
         let builtInAndSmartDividerWidth: CGFloat =
             (!viewModel.visibleBuiltInGroups.isEmpty && !viewModel.visibleSmartFilters.isEmpty) ? 14 : 0
 
-        return min(
-            680,
-            customGroupWidth
-                + builtInGroupWidth
-                + smartFilterWidth
-                + customAndBuiltInDividerWidth
-                + builtInAndSmartDividerWidth
-        )
+        let estimatedWidth = customGroupWidth
+            + builtInGroupWidth
+            + smartFilterWidth
+            + customAndBuiltInDividerWidth
+            + builtInAndSmartDividerWidth
+        let measuredWidth = scrollableGroupTabsContentWidth > 0
+            ? scrollableGroupTabsContentWidth
+            : estimatedWidth
+
+        return min(680, measuredWidth)
     }
 
     private var horizontalLeadingControls: some View {
@@ -198,27 +198,26 @@ struct ClipboardHeaderView: View {
         .frame(width: 28, alignment: .leading)
     }
 
-    private var isHorizontalSearchExpanded: Bool {
-        focusedField == .searchBar || !viewModel.searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    private var hasActiveSearchChromeContent: Bool {
+        viewModel.isSearchCompositionActive
+            || !viewModel.searchInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var horizontalSearchBarWidth: CGFloat {
+    private var isHorizontalSearchExpanded: Bool {
+        isSearchChromeExpanded
+            || focusedField == .searchBar
+            || hasActiveSearchChromeContent
+    }
+
+    /// Layout and visual width share one value so collapse leaves no empty slot
+    /// between the search chrome and the favorites/group bar.
+    private var horizontalSearchChromeWidth: CGFloat {
         isHorizontalSearchExpanded
             ? HorizontalSearchLayout.expandedWidth
             : HorizontalSearchLayout.collapsedWidth
     }
 
-    private var horizontalSearchContentWidth: CGFloat {
-        isHorizontalSearchExpanded
-            ? HorizontalSearchLayout.expandedWidth - HorizontalSearchLayout.fieldHeight
-            : 0
-    }
-
-    private var horizontalSearchWidthAnimation: Animation {
-        .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.24)
-    }
-
-    private var horizontalSearchContentAnimation: Animation {
+    private var searchExpandAnimation: Animation {
         .easeOut(duration: 0.18)
     }
 
@@ -238,27 +237,38 @@ struct ClipboardHeaderView: View {
                 horizontalSearchTextField
                 horizontalSearchClearButton
             }
-            .padding(.leading, isHorizontalSearchExpanded ? 4 : 0)
-            .padding(.trailing, isHorizontalSearchExpanded ? HorizontalSearchLayout.horizontalPadding : 0)
-            .frame(width: horizontalSearchContentWidth, alignment: .leading)
+            .padding(.leading, 4)
+            .padding(.trailing, HorizontalSearchLayout.horizontalPadding)
+            // Text area stays at expanded width; outer frame + clip reveal it.
+            .frame(
+                width: HorizontalSearchLayout.expandedWidth - HorizontalSearchLayout.fieldHeight,
+                alignment: .leading
+            )
             .opacity(isHorizontalSearchExpanded ? 1 : 0)
-            .offset(x: isHorizontalSearchExpanded ? 0 : -4)
-            .clipped()
             .allowsHitTesting(isHorizontalSearchExpanded)
-            .animation(horizontalSearchContentAnimation, value: isHorizontalSearchExpanded)
         }
         .frame(height: HorizontalSearchLayout.fieldHeight)
-        .frame(width: horizontalSearchBarWidth, alignment: .leading)
+        .frame(width: horizontalSearchChromeWidth, alignment: .leading)
         .background(Color.clear.background(.regularMaterial))
         .overlay {
             Capsule()
-                .strokeBorder(searchFieldFocusColor, lineWidth: 1)
+                .strokeBorder(isHorizontalSearchExpanded ? searchFieldFocusColor : .clear, lineWidth: 1)
         }
         .clipShape(Capsule())
-        .shadow(color: searchFieldShadowColor, radius: focusedField == .searchBar ? 8 : 4, y: 2)
-        .animation(horizontalSearchWidthAnimation, value: isHorizontalSearchExpanded)
-        .animation(.easeInOut(duration: 0.18), value: viewModel.searchInput.isEmpty)
-        .help(isHorizontalSearchExpanded ? Text("Search History") : Text("Search"))
+        .contentShape(Capsule())
+        .shadow(color: searchFieldShadowColor, radius: 4, y: 2)
+        .animation(searchExpandAnimation, value: isHorizontalSearchExpanded)
+        .compositingGroup()
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !isHorizontalSearchExpanded {
+                activateHorizontalSearch()
+            }
+        }
+        .onChange(of: focusedField) { _, newValue in
+            syncSearchChromeWithFocus(newValue)
+        }
+        .help(isHorizontalSearchExpanded ? Text("搜索历史") : Text("搜索"))
     }
 
     private var horizontalSearchIcon: some View {
@@ -282,18 +292,47 @@ struct ClipboardHeaderView: View {
     @ViewBuilder
     private var horizontalSearchClearButton: some View {
         if !viewModel.searchInput.isEmpty {
-            Button(action: { viewModel.searchInput = "" }) {
+            Button(action: clearHorizontalSearchInput) {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .transition(.move(edge: .trailing).combined(with: .opacity))
         }
     }
 
     private func activateHorizontalSearch() {
-        withAnimation(horizontalSearchWidthAnimation) {
+        withAnimation(searchExpandAnimation) {
+            isSearchChromeExpanded = true
+        }
+        // Focus is applied after the layout animation starts so `@FocusState`
+        // does not pull the entire header/list into the same transaction.
+        DispatchQueue.main.async {
             focusedField = .searchBar
+        }
+    }
+
+    private func clearHorizontalSearchInput() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            viewModel.searchInput = ""
+        }
+    }
+
+    private func syncSearchChromeWithFocus(_ newValue: ClipboardPanelFocusField?) {
+        if newValue == .searchBar {
+            if isSearchChromeExpanded == false {
+                withAnimation(searchExpandAnimation) {
+                    isSearchChromeExpanded = true
+                }
+            }
+            return
+        }
+
+        guard hasActiveSearchChromeContent == false else { return }
+        guard isSearchChromeExpanded else { return }
+        withAnimation(searchExpandAnimation) {
+            isSearchChromeExpanded = false
         }
     }
 
@@ -338,9 +377,21 @@ struct ClipboardHeaderView: View {
         }
         .padding(.horizontal, isVerticalLayout ? 1 : 2)
         .fixedSize(horizontal: true, vertical: false)
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .preference(
+                        key: GroupTabsContentWidthPreferenceKey.self,
+                        value: proxy.size.width
+                    )
+            }
+        }
         .coordinateSpace(.named(GroupBarDropSpace.name))
         .onPreferenceChange(GroupTabFramePreferenceKey.self) { frames in
             groupTabFrames = frames
+        }
+        .onPreferenceChange(GroupTabsContentWidthPreferenceKey.self) { width in
+            scrollableGroupTabsContentWidth = width
         }
         .onDrop(
             of: [ClipboardDragType.group],
@@ -401,7 +452,7 @@ struct ClipboardHeaderView: View {
         }
         .buttonStyle(.plain)
         .frame(width: 24)
-        .help("All Groups")
+        .help("所有分组")
         .popover(isPresented: $isShowingGroupOverflowPopover, arrowEdge: .bottom) {
             groupOverflowPopover
                 .environment(\.locale, panelLocale)
@@ -491,6 +542,22 @@ struct ClipboardHeaderView: View {
                 newGroupEditor.prepareForCreate()
                 DispatchQueue.main.async {
                     isShowingNewGroupPopover = true
+                }
+            }
+
+            Divider()
+                .padding(.vertical, 3)
+
+            GroupOverflowRow(
+                title: .localized(LocalizedStringResource("Settings…")),
+                icon: "gearshape",
+                isSelected: false,
+                accentColor: appAccentColor
+            ) {
+                isShowingAIModelPopover = false
+                isShowingGroupOverflowPopover = false
+                SettingsWindowCoordinator.open {
+                    openSettings()
                 }
             }
         }
@@ -634,7 +701,7 @@ struct ClipboardHeaderView: View {
             isTargeted: Binding(
                 get: { targetedBuiltInGroup == group },
                 set: { isTargeted in
-                    withAnimation(.easeInOut(duration: 0.15)) {
+                    withAnimation(.easeOut(duration: 0.08)) {
                         targetedBuiltInGroup = isTargeted ? group : nil
                     }
                 }
@@ -707,7 +774,7 @@ struct ClipboardHeaderView: View {
             isTargeted: Binding(
                 get: { targetedGroupId == group.id },
                 set: { isTargeted in
-                    withAnimation(.easeInOut(duration: 0.15)) {
+                    withAnimation(.easeOut(duration: 0.08)) {
                         targetedGroupId = isTargeted ? group.id : nil
                     }
                 }
@@ -754,7 +821,7 @@ struct ClipboardHeaderView: View {
                 .animation(.spring(), value: isPanelPinned)
         }
         .buttonStyle(.plain)
-        .help(isPanelPinned ? Text("Unpin Panel") : Text("Pin Panel"))
+        .help(isPanelPinned ? Text("取消固定面板") : Text("固定面板"))
     }
 
     // MARK: - 设置下拉菜单
@@ -925,7 +992,13 @@ struct ClipboardHeaderView: View {
     private var searchTextBinding: Binding<String> {
         Binding(
             get: { viewModel.searchInput },
-            set: { viewModel.searchInput = $0 }
+            set: { newValue in
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    viewModel.searchInput = newValue
+                }
+            }
         )
     }
 
@@ -936,25 +1009,33 @@ struct ClipboardHeaderView: View {
     }
 
     private var searchFieldShadowColor: Color {
-        focusedField == .searchBar
+        isHorizontalSearchExpanded
             ? appAccentColor.color.opacity(0.16)
             : .black.opacity(0.05)
     }
 
     private func selectAllGroup() {
-        viewModel.showAllItems()
+        withAnimation(.easeOut(duration: 0.12)) {
+            viewModel.showAllItems()
+        }
     }
 
     private func selectCustomGroup(_ groupID: String) {
-        viewModel.showCustomGroup(groupID)
+        withAnimation(.easeOut(duration: 0.12)) {
+            viewModel.showCustomGroup(groupID)
+        }
     }
 
     private func selectSmartFilter(_ type: ClipboardContentType) {
-        viewModel.showSmartFilter(type)
+        withAnimation(.easeOut(duration: 0.12)) {
+            viewModel.showSmartFilter(type)
+        }
     }
 
     private func selectBuiltInGroup(_ group: ClipboardBuiltInGroup) {
-        viewModel.showBuiltInGroup(group)
+        withAnimation(.easeOut(duration: 0.12)) {
+            viewModel.showBuiltInGroup(group)
+        }
     }
 
     private func handleItemDrop(
@@ -985,530 +1066,5 @@ struct ClipboardHeaderView: View {
             }
         }
         return true
-    }
-}
-
-#Preview {
-    ClipboardHeaderPreview()
-}
-
-struct GroupOverflowSectionTitle: View {
-    let title: LocalizedStringKey
-
-    init(_ title: LocalizedStringKey) {
-        self.title = title
-    }
-
-    var body: some View {
-        Text(title)
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.secondary.opacity(0.65))
-            .padding(.horizontal, 10)
-            .padding(.top, 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-struct GroupOverflowRow: View {
-    enum Title {
-        case localized(LocalizedStringResource)
-        case verbatim(String)
-    }
-
-    let title: Title
-    let icon: String?
-    let isSelected: Bool
-    let accentColor: AppAccentColor
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    private var isHighlighted: Bool {
-        isSelected || isHovered
-    }
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                if let iconName = ClipboardGroupIconName.normalize(icon) {
-                    GroupIconView(iconName: iconName, size: 13)
-                        .frame(width: 14, height: 14)
-                } else {
-                    Spacer()
-                        .frame(width: 14, height: 14)
-                }
-
-                titleView
-                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                    .lineLimit(1)
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .opacity(isSelected ? 1 : 0)
-            }
-            .foregroundStyle(isHighlighted ? accentColor.selectedContentColor : Color.primary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(isHighlighted ? accentColor.color : Color.clear)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-    }
-
-    @ViewBuilder
-    private var titleView: some View {
-        switch title {
-        case .localized(let resource):
-            Text(resource)
-        case .verbatim(let string):
-            Text(verbatim: string)
-        }
-    }
-}
-
-struct AIModelOverflowRow: View {
-    let configuration: AIConfiguration
-    let isSelected: Bool
-    let accentColor: AppAccentColor
-    let action: () -> Void
-
-    @State private var isHovered = false
-
-    private var isHighlighted: Bool {
-        isSelected || isHovered
-    }
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                AIProviderIconView(configuration: configuration, size: 14)
-                    .frame(width: 14, height: 14)
-
-                Text(verbatim: configuration.displayTitle)
-                    .font(.system(size: 14, weight: isSelected ? .semibold : .regular))
-                    .lineLimit(1)
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .opacity(isSelected ? 1 : 0)
-            }
-            .foregroundStyle(isHighlighted ? accentColor.selectedContentColor : Color.primary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(isHighlighted ? accentColor.color : Color.clear)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering in
-            isHovered = hovering
-        }
-    }
-}
-
-private struct ClipboardHeaderPreview: View {
-    @FocusState private var focusedField: ClipboardPanelFocusField?
-
-    var body: some View {
-        ClipboardHeaderView(
-            viewModel: ClipboardViewModel(clipboardMonitor: nil),
-            focusedField: _focusedField
-        )
-        .environmentObject(AppPreferencesStore.shared)
-        .frame(width: 380)
-    }
-}
-
-// MARK: - 极简原生 Tab 按钮子组件
-
-struct MinimalGroupTabButton: View {
-    private enum Metrics {
-        static let iconSize: CGFloat = 14
-    }
-
-    enum Title {
-        case localized(LocalizedStringResource)
-        case verbatim(String)
-    }
-
-    let title: Title
-    let icon: String?
-    let isSelected: Bool
-    var maxTextWidth: CGFloat? = nil
-    var horizontalPadding: CGFloat = 12
-    var verticalPadding: CGFloat = 5
-    var iconSpacing: CGFloat = 5
-    let action: () -> Void
-
-    @State private var isHovered = false
-    @Environment(\.colorScheme) private var colorScheme
-    @AppStorage("appAccentColor") private var appAccentColor: AppAccentColor = .defaultValue
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: resolvedIconName == nil ? 0 : iconSpacing) {
-                if let resolvedIconName {
-                    GroupIconView(iconName: resolvedIconName, size: Metrics.iconSize)
-                        .frame(width: Metrics.iconSize, height: Metrics.iconSize)
-                }
-                Group {
-                    switch title {
-                    case .localized(let resource):
-                        Text(resource)
-                    case .verbatim(let string):
-                        Text(verbatim: string)
-                    }
-                }
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .if(maxTextWidth != nil) { view in
-                        view.frame(maxWidth: maxTextWidth!, alignment: .leading)
-                    }
-            }
-            .foregroundStyle(foregroundStyle)
-            .padding(.horizontal, horizontalPadding)
-            .padding(.vertical, verticalPadding)
-            .background(tabBackground)
-            .contentShape(Capsule(style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .fixedSize(horizontal: true, vertical: false)
-        .animation(.easeInOut(duration: 0.14), value: isHovered)
-        .animation(.easeInOut(duration: 0.16), value: isSelected)
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.12)) {
-                isHovered = hovering
-            }
-        }
-    }
-
-    private var foregroundStyle: AnyShapeStyle {
-        if isSelected {
-            return AnyShapeStyle(appAccentColor.selectedContentColor)
-        }
-        return AnyShapeStyle(isHovered ? Color.primary : Color.secondary)
-    }
-
-    private var resolvedIconName: String? {
-        ClipboardGroupIconName.normalize(icon)
-    }
-
-    private var tabBackground: some View {
-        Capsule(style: .continuous)
-            .fill(backgroundFillStyle)
-            .overlay {
-                Capsule(style: .continuous)
-                    .strokeBorder(borderStyle, lineWidth: borderLineWidth)
-            }
-    }
-
-    private var backgroundFillStyle: AnyShapeStyle {
-        if isSelected {
-            return AnyShapeStyle(appAccentColor.color)
-        }
-
-        if isHovered {
-            return AnyShapeStyle(
-                colorScheme == .dark
-                    ? Color.white.opacity(0.08)
-                    : Color.black.opacity(0.045)
-            )
-        }
-
-        return AnyShapeStyle(Color.clear)
-    }
-
-    private var borderStyle: AnyShapeStyle {
-        if isSelected {
-            return AnyShapeStyle(appAccentColor.color.opacity(colorScheme == .dark ? 0.82 : 0.64))
-        }
-
-        if isHovered {
-            return AnyShapeStyle(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08))
-        }
-
-        return AnyShapeStyle(Color.clear)
-    }
-
-    private var borderLineWidth: CGFloat {
-        isSelected ? 1 : (isHovered ? 0.6 : 0)
-    }
-}
-
-// MARK: - Conditional View Modifier
-
-extension View {
-    @ViewBuilder
-    func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
-        if condition {
-            transform(self)
-        } else {
-            self
-        }
-    }
-}
-
-// MARK: - 免 Shift 横向滚动组件
-
-/// 将垂直滚轮事件重定向为横向滚动的轻量级 NSScrollView 包装器。
-/// 用于分组导航栏等窄小横向滚动区域，让用户无需按住 Shift 即可横向滚动。
-struct FreeScrollWheelView<Content: View>: NSViewRepresentable {
-    let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    func makeNSView(context: Context) -> _FreeScrollNSScrollView {
-        let scrollView = _FreeScrollNSScrollView()
-        scrollView.hasHorizontalScroller = false
-        scrollView.hasVerticalScroller = false
-        scrollView.drawsBackground = false
-        scrollView.scrollerStyle = .overlay
-
-        let hostingView = NSHostingView(rootView: content)
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.documentView = hostingView
-
-        // 固定高度跟随容器，宽度自适应内容
-        NSLayoutConstraint.activate([
-            hostingView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: scrollView.contentView.bottomAnchor),
-            hostingView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
-        ])
-
-        return scrollView
-    }
-
-    func updateNSView(_ nsView: _FreeScrollNSScrollView, context: Context) {
-        if let hostingView = nsView.documentView as? NSHostingView<Content> {
-            hostingView.rootView = content
-        }
-    }
-}
-
-/// 自定义 NSScrollView：拦截垂直滚轮事件，转换为横向滚动。
-/// 同时确保拖拽事件透传到子视图（SwiftUI .onDrop）。
-final class _FreeScrollNSScrollView: NSScrollView {
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        // 注册内部拖拽类型，确保 NSScrollView 不会吞掉拖拽事件
-        registerForDraggedTypes([
-            .init(ClipboardDragType.item),
-            .init(ClipboardDragType.group),
-            .string
-        ])
-    }
-
-    // MARK: - 拖拽透传：全部转发给 documentView (SwiftUI HostingView)
-    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        return documentView?.draggingEntered(sender) ?? super.draggingEntered(sender)
-    }
-
-    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        return documentView?.draggingUpdated(sender) ?? super.draggingUpdated(sender)
-    }
-
-    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
-        documentView?.draggingExited(sender)
-    }
-
-    override func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-        return documentView?.prepareForDragOperation(sender) ?? super.prepareForDragOperation(sender)
-    }
-
-    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-        return documentView?.performDragOperation(sender) ?? false
-    }
-
-    override func concludeDragOperation(_ sender: (any NSDraggingInfo)?) {
-        documentView?.concludeDragOperation(sender)
-    }
-
-    // MARK: - 滚轮重定向
-    override func scrollWheel(with event: NSEvent) {
-        let dy = event.scrollingDeltaY
-        let dx = event.scrollingDeltaX
-
-        // 只在垂直分量主导时执行重定向
-        guard abs(dy) > abs(dx), dy != 0 else {
-            super.scrollWheel(with: event)
-            return
-        }
-
-        let multiplier: CGFloat = event.hasPreciseScrollingDeltas ? 1.0 : 10.0
-        let delta = dy * multiplier
-
-        let clipView = self.contentView
-        var origin = clipView.bounds.origin
-        origin.x -= delta
-
-        // Clamp
-        let documentWidth = self.documentView?.frame.width ?? 0
-        let visibleWidth = clipView.bounds.width
-        let maxX = max(0, documentWidth - visibleWidth)
-        origin.x = max(0, min(origin.x, maxX))
-
-        clipView.scroll(to: NSPoint(x: origin.x, y: clipView.bounds.origin.y))
-        reflectScrolledClipView(clipView)
-    }
-}
-
-enum GroupInsertEdge {
-    case leading
-    case trailing
-}
-
-struct GroupReorderTarget: Equatable {
-    let groupID: String
-    let edge: GroupInsertEdge
-}
-
-enum GroupBarDropSpace {
-    static let name = "ClipboardHeader.GroupBarDropSpace"
-}
-
-struct GroupTabsContentWidthPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-struct GroupTabFramePreferenceKey: PreferenceKey {
-    static var defaultValue: [String: CGRect] = [:]
-
-    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
-    }
-}
-
-struct GroupBarDropDelegate: DropDelegate {
-    let orderedGroupIDs: [String]
-    let groupFrames: [String: CGRect]
-    @Binding var reorderTarget: GroupReorderTarget?
-    let viewModel: ClipboardViewModel
-
-    func validateDrop(info: DropInfo) -> Bool {
-        info.hasItemsConforming(to: [ClipboardDragType.group])
-    }
-
-    func dropEntered(info: DropInfo) {
-        updateReorderPosition(info: info)
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        updateReorderPosition(info: info)
-        return DropProposal(operation: .move)
-    }
-
-    func dropExited(info: DropInfo) {
-        guard reorderTarget != nil else { return }
-        withAnimation(.easeInOut(duration: 0.12)) {
-            reorderTarget = nil
-        }
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        withAnimation(.easeInOut(duration: 0.12)) {
-            reorderTarget = nil
-        }
-        viewModel.draggedGroup = nil
-        viewModel.saveGroupOrder()
-        return true
-    }
-
-    private func updateReorderPosition(info: DropInfo) {
-        guard let draggedGroup = viewModel.draggedGroup,
-              let nextTarget = resolvedReorderTarget(at: info.location),
-              draggedGroup.id != nextTarget.groupID else { return }
-
-        if reorderTarget != nextTarget {
-            withAnimation(.easeInOut(duration: 0.12)) {
-                reorderTarget = nextTarget
-            }
-        }
-
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            viewModel.moveGroup(
-                from: draggedGroup.id,
-                relativeTo: nextTarget.groupID,
-                insertAfter: nextTarget.edge == .trailing
-            )
-        }
-    }
-
-    private func resolvedReorderTarget(at location: CGPoint) -> GroupReorderTarget? {
-        guard let first = orderedFrames.first,
-              let last = orderedFrames.last else { return nil }
-
-        if location.x <= first.frame.midX {
-            return GroupReorderTarget(groupID: first.id, edge: .leading)
-        }
-
-        for entry in orderedFrames {
-            if location.x <= entry.frame.maxX {
-                let edge: GroupInsertEdge = location.x <= entry.frame.midX ? .leading : .trailing
-                return GroupReorderTarget(groupID: entry.id, edge: edge)
-            }
-        }
-
-        return GroupReorderTarget(groupID: last.id, edge: .trailing)
-    }
-
-    private var orderedFrames: [(id: String, frame: CGRect)] {
-        orderedGroupIDs.compactMap { id in
-            guard let frame = groupFrames[id] else { return nil }
-            return (id, frame)
-        }
-    }
-}
-
-// MARK: - Window Drag Handle
-
-struct WindowDragArea: NSViewRepresentable {
-    func makeNSView(context: Context) -> DragHandleView { DragHandleView() }
-    func updateNSView(_ nsView: DragHandleView, context: Context) {}
-
-    class DragHandleView: NSView {
-        private var dragStart: NSPoint?
-
-        override func mouseDown(with event: NSEvent) {
-            dragStart = event.locationInWindow
-        }
-
-        override func mouseDragged(with event: NSEvent) {
-            guard let start = dragStart, let window else { return }
-            let current = event.locationInWindow
-            let dx = current.x - start.x
-            let dy = current.y - start.y
-            var origin = window.frame.origin
-            origin.x += dx
-            origin.y += dy
-            window.setFrameOrigin(origin)
-        }
-
-        override func mouseUp(with event: NSEvent) {
-            dragStart = nil
-        }
-
-        override func draw(_ dirtyRect: NSRect) {}
     }
 }

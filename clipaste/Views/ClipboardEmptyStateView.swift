@@ -3,6 +3,11 @@ import SwiftUI
 struct ClipboardEmptyStateView: View {
     @ObservedObject var viewModel: ClipboardViewModel
     @AppStorage("clipboardLayout") private var clipboardLayout: AppLayoutMode = .horizontal
+    @AppStorage("appTheme") private var appTheme: AppTheme = .system
+
+    private var skeletonCornerRadius: CGFloat {
+        appTheme.panelVisualStyle == .paste ? 25 : 16
+    }
 
     var body: some View {
         Group {
@@ -20,7 +25,15 @@ struct ClipboardEmptyStateView: View {
     }
 
     private var isLoading: Bool {
-        viewModel.isInitialHistoryLoading && !isSearching
+        // 初始加载、或当前 scope 仍空且全量历史未就绪时，显示 skeleton 而非空托盘
+        if isSearching { return false }
+        if viewModel.isInitialHistoryLoading { return true }
+        if viewModel.displayedItems.isEmpty,
+           viewModel.hasLoadedFullHistory == false,
+           viewModel.isLoadingMoreHistory || viewModel.needsReloadOnNextPresentation {
+            return true
+        }
+        return false
     }
 
     @ViewBuilder
@@ -28,11 +41,11 @@ struct ClipboardEmptyStateView: View {
         if clipboardLayout == .horizontal {
             HStack(spacing: 20) {
                 ForEach(0..<4, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: skeletonCornerRadius, style: .continuous)
                         .fill(Color.primary.opacity(0.06))
                         .frame(width: 240, height: 240)
                         .overlay(alignment: .topLeading) {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            RoundedRectangle(cornerRadius: skeletonCornerRadius, style: .continuous)
                                 .fill(Color.primary.opacity(0.08))
                                 .frame(height: 52)
                         }

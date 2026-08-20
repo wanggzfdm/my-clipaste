@@ -9,7 +9,6 @@ struct ClipboardItemActionModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            // Ensure transparent areas are also tappable
             .contentShape(Rectangle())
             .modifier(ClipboardItemTapBehaviorModifier(
                 item: item,
@@ -26,22 +25,25 @@ extension View {
     }
 }
 
-// MARK: - Optional-ViewModel variant for ClipboardCardView
+// MARK: - Card variant (fork Paste 2.1.5 click model)
 
-/// Handles ClipboardCardView which has an optional viewModel and a legacy onSelect callback.
 struct ClipboardCardActionModifier: ViewModifier {
     let item: ClipboardItem
     @ObservedObject var viewModel: ClipboardViewModel
     @AppStorage("singleClickPaste") private var singleClickPaste = false
+    @AppStorage("appTheme") private var appTheme: AppTheme = .system
 
     func body(content: Content) -> some View {
         content
             .contentShape(Rectangle())
-            .modifier(ClipboardItemTapBehaviorModifier(
-                item: item,
-                viewModel: viewModel,
-                singleClickPaste: singleClickPaste
-            ))
+            .modifier(
+                ClipboardItemTapBehaviorModifier(
+                    item: item,
+                    viewModel: viewModel,
+                    singleClickPaste: singleClickPaste,
+                    usesPasteStyleClickModel: appTheme.panelVisualStyle == .paste
+                )
+            )
     }
 }
 
@@ -49,17 +51,36 @@ private struct ClipboardItemTapBehaviorModifier: ViewModifier {
     let item: ClipboardItem
     @ObservedObject var viewModel: ClipboardViewModel
     let singleClickPaste: Bool
+    var usesPasteStyleClickModel: Bool = false
 
     func body(content: Content) -> some View {
-        if singleClickPaste {
+        if usesPasteStyleClickModel {
+            // fork 2.1.5: single-click copy (or paste if preference), double-click force paste
+            if singleClickPaste {
+                content
+                    .simultaneousGesture(TapGesture().onEnded {
+                        viewModel.handlePrimaryClickSelection(for: item.id)
+                        viewModel.copyToClipboard(item: item)
+                    })
+                    .simultaneousGesture(TapGesture(count: 2).onEnded {
+                        viewModel.pasteToActiveApp(item: item, forceAutoPaste: true)
+                    })
+            } else {
+                content
+                    .simultaneousGesture(TapGesture().onEnded {
+                        viewModel.handlePrimaryClickSelection(for: item.id)
+                    })
+                    .simultaneousGesture(TapGesture(count: 2).onEnded {
+                        viewModel.pasteToActiveApp(item: item, forceAutoPaste: true)
+                    })
+            }
+        } else if singleClickPaste {
             content
                 .simultaneousGesture(TapGesture().onEnded {
                     viewModel.pasteToActiveApp(item: item)
                 })
         } else {
             content
-                // Make selection feel instant. Double-click still fires paste, but single-click
-                // no longer waits for the double-click recognition window to expire.
                 .simultaneousGesture(TapGesture().onEnded {
                     viewModel.handlePrimaryClickSelection(for: item.id)
                 })

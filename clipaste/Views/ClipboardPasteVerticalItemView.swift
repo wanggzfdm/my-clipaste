@@ -1,0 +1,436 @@
+import SwiftUI
+import Combine
+
+struct ClipboardPasteVerticalItemView: View {
+    private enum Layout {
+        static let rowHorizontalPadding: CGFloat = 12
+        static let appIconSize: CGFloat = 42
+        static let contentSpacing: CGFloat = 12
+        static let compactAppIconSize: CGFloat = 28
+        static let customTitleHeight: CGFloat = 13
+        static let customTitleLeading: CGFloat = rowHorizontalPadding + appIconSize + contentSpacing
+        static let customTitleTop: CGFloat = 8
+    }
+
+    let item: ClipboardItem
+    @ObservedObject var viewModel: ClipboardViewModel
+    let quickPasteIndex: Int?
+    let usesPreviewPanel: Bool
+    let allowsAutoPreview: Bool
+    let onHoverChange: ((Bool) -> Void)?
+
+    @AppStorage("clipboardLayout") private var clipboardLayout: AppLayoutMode = .horizontal
+    @AppStorage("appAccentColor") private var appAccentColor: AppAccentColor = .defaultValue
+
+    @State private var isHovering = false
+    @State private var isMenuTracking = false
+    @State private var richPreviewText: AttributedString?
+
+    private var isCompact: Bool {
+        clipboardLayout == .compact
+    }
+
+    private var isSelected: Bool {
+        viewModel.selectedItemIDs.contains(item.id)
+    }
+
+    /// 颜色嗅探结果：使用极速短路版本，超过 100 字符跳过正则
+    private var parsedColor: Color? {
+        item.fastParsedColor
+    }
+
+    private var previewText: String {
+        if let preview = item.previewText, !preview.isEmpty {
+            return preview
+        }
+
+        return item.textPreview.isEmpty ? String(localized: "(Empty)") : item.textPreview
+    }
+
+    private var quickPasteNumber: Int? {
+        quickPasteIndex.map { $0 + 1 }
+    }
+
+    private var showsQuickPasteBadge: Bool {
+        quickPasteNumber != nil && viewModel.isQuickPasteModifierHeld
+    }
+
+    private var shouldTriggerQuickLookPreview: Bool {
+        false
+    }
+
+    private var richTextTaskKey: String {
+        "\(item.id.uuidString)-\(item.contentHash)-\(item.hasRTF)-search:\(viewModel.isSearchFilteringActive)"
+    }
+
+    private var rowFillStyle: AnyShapeStyle {
+        if let parsedColor {
+            return AnyShapeStyle(parsedColor)
+        }
+
+        if isSelected {
+            return AnyShapeStyle(appAccentColor.color.opacity(0.12))
+        }
+
+        return AnyShapeStyle(
+            Color(nsColor: .controlBackgroundColor).opacity(isHovering ? 1.0 : 0.6)
+        )
+    }
+
+    private var rowBorderColor: Color {
+        if parsedColor != nil {
+            return Color.primary.opacity(0.12)
+        }
+
+        if isSelected {
+            return appAccentColor.color
+        }
+
+        if isHovering {
+            return appAccentColor.color.opacity(0.45)
+        }
+
+        return .clear
+    }
+
+    private var timeTextColor: Color {
+        parsedColor.map { $0.isDark ? .white.opacity(0.6) : .black.opacity(0.45) }
+            ?? .secondary
+    }
+
+    private var dateTextColor: Color {
+        parsedColor.map { $0.isDark ? .white.opacity(0.4) : .black.opacity(0.3) }
+            ?? .secondary.opacity(0.7)
+    }
+
+    private var customTitleTextColor: Color {
+        parsedColor.map { $0.isDark ? .white.opacity(0.96) : .black.opacity(0.9) }
+        ?? .black.opacity(0.9)
+    }
+
+    private var timestampHelpText: String {
+        item.timestamp.formatted(
+            .dateTime
+                .locale(Locale(identifier: "zh-Hans"))
+                .year()
+                .month(.wide)
+                .day()
+                .weekday(.wide)
+                .hour()
+                .minute()
+                .second()
+        )
+    }
+
+    var body: some View {
+        rowContent
+            .padding(.horizontal, isCompact ? 6 : Layout.rowHorizontalPadding)
+            .frame(height: isCompact ? 36 : 76)
+            .background(
+                RoundedRectangle(cornerRadius: isCompact ? 6 : 12)
+                    .fill(rowFillStyle)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: isCompact ? 6 : 12)
+                    .stroke(rowBorderColor, lineWidth: isCompact ? 1.0 : 1.5)
+            )
+            .overlay(alignment: .topLeading) {
+                customTitleOverlay
+            }
+            .task(id: richTextTaskKey) {
+                await refreshRichPreviewText()
+            }
+            .background { quickPasteShortcutBackground }
+            .shareable(item: item, viewModel: viewModel)
+            .clipboardContextMenu(for: item, viewModel: viewModel)
+            .freezingHoverWhileMenuTracking(isMenuTracking: $isMenuTracking) { hovering in
+                var transaction = Transaction()
+                transaction.disablesAnimations = viewModel.isSearchFilteringActive
+                withTransaction(transaction) {
+                    isHovering = hovering
+                }
+                onHoverChange?(hovering)
+            }
+            .animation(nil, value: showsQuickPasteBadge)
+            .onDrag {
+                viewModel.draggedItemId = item.id
+                return item.universalDragProvider
+            } preview: {
+                ClipboardDragPreview(item: item)
+            }
+            .clipboardItemActions(for: item, viewModel: viewModel)
+    }
+
+    @ViewBuilder
+    private var rowContent: some View {
+        HStack(spacing: isCompact ? 6 : Layout.contentSpacing) {
+            // 1. 左侧：App 图标
+            AppIconView(appBundleID: item.sourceBundleIdentifier, size: isCompact ? Layout.compactAppIconSize : Layout.appIconSize)
+                .shadow(color: Color.black.opacity(0.1), radius: isCompact ? 1 : 2, y: isCompact ? 1 : 1)
+
+            // 2. 中间：内容预览
+            VStack(alignment: .leading, spacing: isCompact ? 0 : 4) {
+                if item.contentType == .fileURL, let fileURL = item.resolvedFileURL {
+                    let displayPath = item.fileDisplayPath ?? fileURL.path
+
+                    if item.fileRepresentsImage {
+                        if !isCompact {
+                            ClipboardFileThumbnailView(fileURL: fileURL, maxPixelSize: 160) {
+                                Image(nsImage: NSWorkspace.shared.icon(forFile: displayPath))
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 36, height: 36)
+                            }
+                            .frame(maxHeight: 44)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(Color.secondary.opacity(0.1), lineWidth: 1)
+                            )
+                            .frame(maxWidth: .infinity, alignment: .center)
+                        } else {
+                            // Compact: just show file name
+                            Text(item.fileDisplayName ?? (displayPath as NSString).lastPathComponent)
+                                .font(.system(size: 11))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                    } else {
+                        // ── 文件类型：系统原生图标 + 文件名 + 路径 ──────────────
+                        if !isCompact {
+                            HStack(spacing: 10) {
+                                Image(nsImage: NSWorkspace.shared.icon(forFile: displayPath))
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 36, height: 36)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.fileDisplayName ?? (displayPath as NSString).lastPathComponent)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .lineLimit(1)
+                                    Text(displayPath)
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        } else {
+                            // Compact: just show file name
+                            Text(item.fileDisplayName ?? (displayPath as NSString).lastPathComponent)
+                                .font(.system(size: 11))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                    }
+                } else if item.contentType == .image {
+                    if !isCompact {
+                        ClipboardThumbnailView(itemID: item.id, maxPixelSize: 160) {
+                            Image(systemName: "photo")
+                                .foregroundColor(.secondary)
+                                .frame(height: 44)
+                        }
+                        .frame(maxHeight: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(Color.secondary.opacity(0.1), lineWidth: 1)
+                        )
+                        .frame(maxWidth: .infinity, alignment: .center)
+                    } else {
+                        // Compact: just show image indicator
+                        Text("图片")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    if parsedColor != nil {
+                        // 颜色条目：只居中展示等宽色值，背景由卡片层处理
+                        Text(previewText)
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .foregroundColor(parsedColor!.isDark ? .white : .black)
+                            .shadow(
+                                color: parsedColor!.isDark
+                                    ? Color.black.opacity(0.3)
+                                    : Color.white.opacity(0.3),
+                                radius: 1, x: 0, y: 1
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else if item.isFastLink {
+                        switch viewModel.settingsViewModel.linkDisplayMode {
+                        case .rich:
+                            ClipboardLinkPreviewRowView(
+                                viewModel: ClipboardLinkPreviewViewModel(item: item),
+                                highlight: viewModel.activeSearchQuery,
+                                isCompact: isCompact
+                            )
+                        case .plain:
+                            ClipboardLinkPlainRowView(
+                                viewModel: ClipboardLinkPreviewViewModel(item: item),
+                                highlight: viewModel.activeSearchQuery,
+                                isCompact: isCompact
+                            )
+                        }
+                    } else {
+                        // ⚠️ 渲染核心：ListRenderEngine 缓存优先
+                        // 缓存命中 → 0 延迟渲染高亮文本
+                        // 缓存未命中 → 瞬间使用纯文本垫底 + onAppear 触发后台缓存
+                        if let richPreviewText {
+                            Text(richPreviewText)
+                                .lineLimit(isCompact ? 1 : 2)
+                                .multilineTextAlignment(.leading)
+                        } else {
+                            HighlightedText(text: previewText, highlight: viewModel.activeSearchQuery)
+                                .lineLimit(isCompact ? 1 : 2)
+                                .multilineTextAlignment(.leading)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // 3. 右侧：时间 + 日期双行排版（弱化处理）
+            if !isCompact {
+                VStack(alignment: .trailing, spacing: 0) {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(item.timestamp.timeString)
+                            .font(.system(size: 11))
+                            .foregroundColor(timeTextColor)
+
+                        Text(item.timestamp.dateString)
+                            .font(.system(size: 9))
+                            .foregroundColor(dateTextColor)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    bottomInlineAction
+                }
+                .padding(.top, 4)
+                .help(timestampHelpText)
+                .frame(minWidth: 44, maxHeight: .infinity, alignment: .topTrailing)
+            } else {
+                // Compact: just show time on the right
+                Text(item.timestamp.timeString)
+                    .font(.system(size: 10))
+                    .foregroundColor(timeTextColor)
+                    .help(timestampHelpText)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var quickPasteShortcutBackground: some View {
+        if let quickPasteIndex {
+            QuickPasteShortcutHost(
+                shortcutIndex: quickPasteIndex,
+                modifierKey: viewModel.quickPasteModifier,
+                plainTextModifierKey: viewModel.plainTextModifier
+            ) {
+                viewModel.pasteToActiveApp(item: item)
+            } plainTextAction: {
+                viewModel.pasteAsPlainText(item: item)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var bottomInlineAction: some View {
+        if let quickPasteNumber, showsQuickPasteBadge {
+            QuickPasteShortcutBadge(
+                modifierKey: viewModel.quickPasteModifier,
+                number: quickPasteNumber,
+                color: timeTextColor
+            )
+            .transition(.opacity)
+        } else if showsAIShortcut {
+            let aiSnapshot = AIMenuSnapshot.make(item: item, settings: viewModel.aiSettingsViewModel)
+            ClipboardAIActionMenuSnapshot(
+                snapshot: aiSnapshot,
+                onRunSkill: { skill in
+                    viewModel.runAISkill(skill, for: item)
+                },
+                onOpenSettings: {
+                    NotificationCenter.default.post(name: .openSettingsIntent, object: nil)
+                }
+            ) {
+                HStack(spacing: -4) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 7, weight: .medium))
+
+                    Text("AI")
+                        .font(.system(size: 9, weight: .medium))
+                }
+                .foregroundStyle(dateTextColor.opacity(0.78))
+                .padding(.horizontal, 2)
+                .frame(height: 20)
+                .background(.regularMaterial, in: Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(Color.black.opacity(0.10), lineWidth: 0.5)
+                }
+                .contentShape(Capsule())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(Text("AI 功能"))
+            .transition(.opacity.combined(with: .scale(scale: 0.96)))
+        }
+    }
+
+    private var showsAIShortcut: Bool {
+        viewModel.aiSettingsViewModel.isAIEnabled
+            && (isHovering || isSelected)
+            && viewModel.isQuickPasteModifierHeld == false
+    }
+
+    @ViewBuilder
+    private var customTitleOverlay: some View {
+        if item.hasCustomTitle && !isCompact {
+            ClipboardItemCustomTitleView(
+                item: item,
+                viewModel: viewModel,
+                font: .system(size: 11, weight: .semibold),
+                textColor: customTitleTextColor
+            )
+            .frame(
+                maxWidth: .infinity,
+                minHeight: Layout.customTitleHeight,
+                maxHeight: Layout.customTitleHeight,
+                alignment: .topLeading
+            )
+            .padding(.leading, Layout.customTitleLeading)
+            .padding(.trailing, 60)
+            .padding(.top, Layout.customTitleTop)
+        }
+    }
+
+    @MainActor
+    private func refreshRichPreviewText() async {
+        guard viewModel.isSearchFilteringActive == false else {
+            richPreviewText = nil
+            return
+        }
+
+        richPreviewText = ListRenderEngine.shared.cachedText(for: item.id)
+
+        guard richPreviewText == nil else {
+            return
+        }
+
+        try? await Task.sleep(nanoseconds: 180_000_000)
+        guard !Task.isCancelled else {
+            return
+        }
+
+        let prepared = await ListRenderEngine.shared.prepareText(for: item)
+        guard !Task.isCancelled else { return }
+        // 纯文本垫底 → RTF 渲染切换用交叉淡入,避免字体/颜色瞬间跳变。
+        withAnimation(.easeInOut(duration: 0.18)) {
+            richPreviewText = prepared
+        }
+    }
+}
+
+// MARK: - Drag Preview

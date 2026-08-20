@@ -7,11 +7,24 @@ struct ClipboardHorizontalView: View {
     @AppStorage("requireCmdToDelete") private var requireCmdToDelete: Bool = false
     @AppStorage("singleClickPaste") private var singleClickPaste = false
     @AppStorage("autoPreview") private var autoPreview = true
+    @AppStorage("appTheme") private var appTheme: AppTheme = .system
     @State private var quickPasteIndexesByItemID: [UUID: Int] = [:]
 
     private let quickPasteCoordinateSpaceName = "ClipboardHorizontalQuickPasteSpace"
 
     var body: some View {
+        if appTheme.panelVisualStyle == .paste {
+            ClipboardPasteHorizontalView(
+                viewModel: viewModel,
+                items: items,
+                focusedField: _focusedField
+            )
+        } else {
+            standardBody
+        }
+    }
+
+    private var standardBody: some View {
         ScrollViewReader { proxy in
             GeometryReader { viewportProxy in
                 ScrollView(.horizontal, showsIndicators: false) {

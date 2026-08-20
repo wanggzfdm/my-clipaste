@@ -3,6 +3,15 @@ import Combine
 import SwiftUI
 
 extension ClipboardViewModel {
+    var isSearchFilteringActive: Bool {
+        activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+
+    /// Paste-style horizontal list pagination hook (scope already windowed in memory).
+    func loadMoreIfNeeded(currentItemID _: UUID) {
+        // v2.2.10 keeps a background memory window; SQL supplement covers scoped filters.
+        // No-op keeps fork list call sites compiling without changing load policy.
+    }
     func setupFilterPipeline() {
         let searchQueries = $searchInput
             .map { query -> AnyPublisher<String, Never> in
@@ -55,7 +64,17 @@ extension ClipboardViewModel {
             return
         }
 
-        let shouldUseDatabaseSearch = !cleanQuery.isEmpty && hasLoadedFullHistory == false
+        // Group / type / favorites can live outside the in-memory history window
+        // (newest 2000). Search already had a SQL supplement; extend the same path
+        // so scoped tabs are not empty when matches are older than the window.
+        let shouldUseDatabaseSupplement =
+            ClipboardScopeFetchPolicy.shouldSupplementFromDatabase(
+                hasSearchQuery: cleanQuery.isEmpty == false,
+                hasGroupScope: groupId != nil,
+                hasTypeScope: typeFilter != nil,
+                hasBuiltInScope: builtInGroup != nil,
+                hasLoadedFullHistory: hasLoadedFullHistory
+            )
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let filteredIDs = items.compactMap { item -> UUID? in
@@ -88,10 +107,8 @@ extension ClipboardViewModel {
                 guard let self, self.filterGeneration == thisGeneration else { return }
                 self.applyDisplayedItemIDsIfChanged(filteredIDs)
 
-                guard shouldUseDatabaseSearch else { return }
+                guard shouldUseDatabaseSupplement else { return }
 
-                // 内存窗口外可能仍有匹配的历史记录 —— 派发一次 SQL 直查，
-                // 把命中记录合并进 items 后追加到结果尾部。
                 self.runDatabaseSearchSupplement(
                     query: cleanQuery,
                     typeFilter: typeFilter,
@@ -116,9 +133,16 @@ extension ClipboardViewModel {
         Task { [weak self] in
             guard let self else { return }
 
+            let fetchLimit = query.isEmpty
+                ? Self.backgroundLoadMaxItems
+                : Self.databaseSearchPageSize
+
             let dbResults = await StorageManager.shared.fetchItemsPage(
                 searchText: query,
-                fetchLimit: Self.databaseSearchPageSize,
+                groupId: groupId,
+                typeRawValue: typeFilter?.rawValue,
+                pinnedOnly: builtInGroup == .favorites,
+                fetchLimit: fetchLimit,
                 offset: 0
             )
 
@@ -129,6 +153,12 @@ extension ClipboardViewModel {
                 if let typeFilter, item.contentType != typeFilter { return false }
                 if let groupId, item.groupIDs.contains(groupId) == false { return false }
                 if let builtInGroup, builtInGroup.matches(item) == false { return false }
+                if query.isEmpty == false {
+                    let searchable = item.searchableText ?? item.rawText ?? item.textPreview
+                    let matchesText = searchable.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+                    let matchesApp = item.appName.range(of: query, options: [.caseInsensitive]) != nil
+                    if matchesText == false && matchesApp == false { return false }
+                }
                 return true
             }
 
@@ -144,11 +174,25 @@ extension ClipboardViewModel {
             )
             let newItems = acceptedIndexes.map { scopedResults[$0] }
 
-            guard newItems.isEmpty == false else { return }
-            guard self.filterGeneration == generation else { return }
+            // Even when every DB hit is already in `items`, memory filter may have
+            // missed them if groupIDs weren't present on older snapshots — rebuild
+            // displayed IDs from the scoped DB page order.
+            let displayedFromDB = scopedResults.map(\.id)
+            let mergedVisible: [UUID]
+            if visibleIDs.isEmpty {
+                mergedVisible = displayedFromDB
+            } else {
+                var seen = Set(visibleIDs)
+                mergedVisible = visibleIDs + displayedFromDB.filter { seen.insert($0).inserted }
+            }
 
-            self.mergeItems(newItems, prepend: false)
-            self.applyDisplayedItemIDsIfChanged(visibleIDs + newItems.map(\.id))
+            if newItems.isEmpty == false {
+                guard self.filterGeneration == generation else { return }
+                self.mergeItems(newItems, prepend: false)
+            }
+
+            guard self.filterGeneration == generation else { return }
+            self.applyDisplayedItemIDsIfChanged(mergedVisible)
         }
     }
 

@@ -49,10 +49,17 @@ final class ClipboardViewModel: ObservableObject {
     @Published var displayedItemIDs: [UUID] = []
     @Published var searchInput: String = ""
     @Published var activeSearchQuery: String = ""
+    /// IME composition flag used by Paste-style expandable search chrome.
+    @Published var isSearchCompositionActive: Bool = false
     @Published var currentFilter: ClipboardContentType? = nil
     @Published var selectedBuiltInGroup: ClipboardBuiltInGroup? = nil
     @Published var selectedItemIDs: Set<UUID> = []
     @Published var listScrollRequest: ClipboardListScrollRequest? = nil
+    /// Paste-style list: bump to rebuild Lazy stacks without cell insert animation.
+    @Published var listContentEpoch: UInt = 0
+    @Published var suppressListAnimations = false
+    @Published var searchResultScrollGeneration: UInt = 0
+    @Published var searchResultScrollTargetID: UUID? = nil
     @Published var isInitialHistoryLoading = false
     @Published var isLoadingMoreHistory = false
     var lastSelectedID: UUID? = nil
@@ -80,6 +87,7 @@ final class ClipboardViewModel: ObservableObject {
     var cancellables: Set<AnyCancellable> = []
     var filterGeneration: UInt = 0
     var listScrollGeneration: UInt = 0
+    var handledSearchResultScrollGeneration: UInt = 0
     var quickLookLoadTask: Task<Void, Never>? = nil
     var quickLookLoadGeneration: UInt = 0
     var quickLookRequestedItemID: UUID? = nil

@@ -127,40 +127,141 @@ nonisolated private func encodedGroupIDs(_ groupIDs: [String]) -> String? {
 
 @ModelActor
 actor ClipboardSearcher {
-    func searchAndMap(searchText: String, fetchLimit: Int? = nil, offset: Int = 0) async -> [ClipboardItem] {
+    func searchAndMap(
+        searchText: String,
+        groupId: String? = nil,
+        typeRawValue: String? = nil,
+        pinnedOnly: Bool = false,
+        fetchLimit: Int? = nil,
+        offset: Int = 0
+    ) async -> [ClipboardItem] {
         let query = searchText
-        var descriptor: FetchDescriptor<ClipboardRecord>
+        let scopedGroupId = groupId
+        let scopedType = typeRawValue
+        let onlyPinned = pinnedOnly
 
-        if query.isEmpty {
+        // Keep the #Predicate shape shallow (compiler timeout risk).
+        // When multiple scopes combine, over-fetch then refine in memory.
+        let needsPostFilter =
+            (scopedGroupId != nil && scopedType != nil)
+            || (query.isEmpty == false && (scopedGroupId != nil || scopedType != nil || onlyPinned))
+            || (onlyPinned && (scopedGroupId != nil || scopedType != nil))
+
+        var descriptor: FetchDescriptor<ClipboardRecord>
+        if onlyPinned && scopedGroupId == nil && scopedType == nil && query.isEmpty {
             descriptor = FetchDescriptor<ClipboardRecord>(
+                predicate: #Predicate<ClipboardRecord> { record in
+                    record.isPinned == true
+                },
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+        } else if let gid = scopedGroupId, query.isEmpty, scopedType == nil, onlyPinned == false {
+            descriptor = FetchDescriptor<ClipboardRecord>(
+                predicate: #Predicate<ClipboardRecord> { record in
+                    record.groupId == gid || (record.groupIdsRaw?.contains(gid) == true)
+                },
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+        } else if let type = scopedType, query.isEmpty, scopedGroupId == nil, onlyPinned == false {
+            descriptor = FetchDescriptor<ClipboardRecord>(
+                predicate: #Predicate<ClipboardRecord> { record in
+                    record.typeRawValue == type
+                },
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+        } else if query.isEmpty == false, scopedGroupId == nil, scopedType == nil, onlyPinned == false {
+            descriptor = FetchDescriptor<ClipboardRecord>(
+                predicate: #Predicate<ClipboardRecord> { record in
+                    (record.plainText?.localizedStandardContains(query) == true) ||
+                    (record.appLocalizedName?.localizedStandardContains(query) == true)
+                },
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+        } else if onlyPinned {
+            descriptor = FetchDescriptor<ClipboardRecord>(
+                predicate: #Predicate<ClipboardRecord> { record in
+                    record.isPinned == true
+                },
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+        } else if let gid = scopedGroupId {
+            descriptor = FetchDescriptor<ClipboardRecord>(
+                predicate: #Predicate<ClipboardRecord> { record in
+                    record.groupId == gid || (record.groupIdsRaw?.contains(gid) == true)
+                },
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+        } else if let type = scopedType {
+            descriptor = FetchDescriptor<ClipboardRecord>(
+                predicate: #Predicate<ClipboardRecord> { record in
+                    record.typeRawValue == type
+                },
+                sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
+            )
+        } else if query.isEmpty == false {
+            descriptor = FetchDescriptor<ClipboardRecord>(
+                predicate: #Predicate<ClipboardRecord> { record in
+                    (record.plainText?.localizedStandardContains(query) == true) ||
+                    (record.appLocalizedName?.localizedStandardContains(query) == true)
+                },
                 sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
             )
         } else {
-            let predicate = #Predicate<ClipboardRecord> { record in
-                (record.plainText?.localizedStandardContains(query) == true) ||
-                (record.appLocalizedName?.localizedStandardContains(query) == true)
-            }
-
             descriptor = FetchDescriptor<ClipboardRecord>(
-                predicate: predicate,
                 sortBy: [SortDescriptor(\.timestamp, order: .reverse)]
             )
         }
 
-        if let fetchLimit, fetchLimit > 0 {
-            descriptor.fetchLimit = fetchLimit
-        }
-
-        if offset > 0 {
-            descriptor.fetchOffset = offset
+        if needsPostFilter {
+            let baseLimit = max(fetchLimit ?? 64, 64)
+            descriptor.fetchLimit = baseLimit * 4 + max(offset, 0)
+        } else {
+            if let fetchLimit, fetchLimit > 0 {
+                descriptor.fetchLimit = fetchLimit
+            }
+            if offset > 0 {
+                descriptor.fetchOffset = offset
+            }
         }
 
         let records = (try? modelContext.fetch(descriptor)) ?? []
-        let snapshots = records.map { record in
-            ClipboardRecordSnapshot.makeFromRecord(record)
+        var items = records.map { record in
+            StorageManager.makeClipboardItem(from: ClipboardRecordSnapshot.makeFromRecord(record))
         }
 
-        return snapshots.map { StorageManager.makeClipboardItem(from: $0) }
+        if onlyPinned {
+            items = items.filter(\.isPinned)
+        }
+        if let scopedType {
+            items = items.filter { $0.contentType.rawValue == scopedType }
+        }
+        if let scopedGroupId {
+            // JSON `contains` is a superset probe; refine with decoded group IDs.
+            items = items.filter { $0.groupIDs.contains(scopedGroupId) }
+        }
+        if query.isEmpty == false {
+            items = items.filter { item in
+                let searchable = item.searchableText ?? item.rawText ?? item.textPreview
+                if searchable.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil {
+                    return true
+                }
+                return item.appName.range(of: query, options: [.caseInsensitive]) != nil
+            }
+        }
+
+        if needsPostFilter {
+            if offset > 0 {
+                if offset >= items.count {
+                    return []
+                }
+                items = Array(items.dropFirst(offset))
+            }
+            if let fetchLimit, fetchLimit > 0, items.count > fetchLimit {
+                items = Array(items.prefix(fetchLimit))
+            }
+        }
+
+        return items
     }
 }
 
@@ -219,16 +320,25 @@ final class StorageManager {
     nonisolated
     func fetchItemsPage(
         searchText: String,
+        groupId: String? = nil,
+        typeRawValue: String? = nil,
+        pinnedOnly: Bool = false,
         fetchLimit: Int,
         offset: Int = 0
     ) async -> [ClipboardItem] {
         let container = self.container
         return await detachedRead {
             let searcher = ClipboardSearcher(modelContainer: container)
-            return await searcher.searchAndMap(searchText: searchText, fetchLimit: fetchLimit, offset: offset)
+            return await searcher.searchAndMap(
+                searchText: searchText,
+                groupId: groupId,
+                typeRawValue: typeRawValue,
+                pinnedOnly: pinnedOnly,
+                fetchLimit: fetchLimit,
+                offset: offset
+            )
         }
     }
-
     nonisolated
     func shutdown() async {
         let runningTasks = prepareForShutdown()

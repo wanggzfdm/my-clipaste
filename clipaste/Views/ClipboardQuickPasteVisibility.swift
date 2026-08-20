@@ -106,19 +106,22 @@ extension View {
     func clipboardQuickPasteVisibleFrame(
         id: UUID,
         sourceIndex: Int,
-        coordinateSpaceName: String
+        coordinateSpaceName: String,
+        isTrackingEnabled: Bool = true
     ) -> some View {
         background {
             GeometryReader { proxy in
                 Color.clear.preference(
                     key: ClipboardQuickPasteVisibleFramePreferenceKey.self,
-                    value: [
-                        ClipboardQuickPasteVisibleFrame(
-                            id: id,
-                            sourceIndex: sourceIndex,
-                            frame: proxy.frame(in: .named(coordinateSpaceName))
-                        )
-                    ]
+                    value: isTrackingEnabled
+                        ? [
+                            ClipboardQuickPasteVisibleFrame(
+                                id: id,
+                                sourceIndex: sourceIndex,
+                                frame: proxy.frame(in: .named(coordinateSpaceName))
+                            )
+                        ]
+                        : []
                 )
             }
         }

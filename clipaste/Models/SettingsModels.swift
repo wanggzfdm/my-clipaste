@@ -407,3 +407,20 @@ enum PreviewPanelMode: String, CaseIterable, Identifiable {
         return nil
     }
 }
+
+enum HorizontalPanelPresentationStyle: String, CaseIterable, Identifiable {
+    case bottomSlide
+    case float
+
+    var id: String { rawValue }
+
+    static let defaultValue: HorizontalPanelPresentationStyle = .bottomSlide
+
+    var localizedTitle: LocalizedStringResource {
+        switch self {
+        case .bottomSlide: return LocalizedStringResource("从底部滑入")
+        case .float: return LocalizedStringResource("浮入")
+        }
+    }
+}
+

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct GeneralSettingsView: View {
@@ -183,6 +184,8 @@ private struct AppearanceThemePreview: View {
 
             if theme == .system {
                 systemCompositePreview
+            } else if theme == .paste {
+                pasteStylePreview
             } else {
                 previewWindow(
                     style: theme == .dark ? .dark : .light,
@@ -206,6 +209,68 @@ private struct AppearanceThemePreview: View {
             y: isSelected ? 3 : 2
         )
         .animation(.snappy(duration: 0.18), value: isSelected)
+    }
+
+    private var pasteStylePreview: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(.sRGB, red: 0.12, green: 0.14, blue: 0.20, opacity: 0.98),
+                            Color(.sRGB, red: 0.06, green: 0.07, blue: 0.11, opacity: 1)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+            // Glass highlight
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.18),
+                            Color.white.opacity(0.04),
+                            Color.clear
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+            HStack(spacing: 6) {
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 14, height: 14)
+                    .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+
+                HStack(spacing: 4) {
+                    ForEach(0..<3, id: \.self) { index in
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.white.opacity(index == 1 ? 0.28 : 0.12))
+                            .frame(width: 16, height: 22)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .strokeBorder(
+                                        index == 1 ? accentColor.opacity(0.85) : Color.white.opacity(0.12),
+                                        lineWidth: index == 1 ? 1.2 : 0.6
+                                    )
+                            }
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+        }
+        .frame(width: previewSize.width, height: previewSize.height)
+        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.8)
+        }
+        .shadow(color: .black.opacity(0.22), radius: 6, y: 3)
     }
 
     private var systemCompositePreview: some View {
