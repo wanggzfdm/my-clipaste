@@ -12,6 +12,8 @@ struct ClipboardPasteCardView: View, Equatable {
     var quickPasteIndex: Int? = nil
     /// 横滑 fling 时由列表传入，用于抑制 RTF 新任务与次要装饰。
     var isListScrolling: Bool = false
+    /// Popover 绑定依赖此 prop：.equatable() 时若不纳入比较，空格预览会卡住直到其它 props 变化。
+    var isQuickLookPresented: Bool = false
 
     static func == (lhs: ClipboardPasteCardView, rhs: ClipboardPasteCardView) -> Bool {
         lhs.item.id == rhs.item.id
@@ -25,6 +27,7 @@ struct ClipboardPasteCardView: View, Equatable {
             && lhs.isAIEnabled == rhs.isAIEnabled
             && lhs.quickPasteIndex == rhs.quickPasteIndex
             && lhs.isListScrolling == rhs.isListScrolling
+            && lhs.isQuickLookPresented == rhs.isQuickLookPresented
     }
     
     @Environment(\.shouldDisableAnimations) private var shouldDisableAnimations

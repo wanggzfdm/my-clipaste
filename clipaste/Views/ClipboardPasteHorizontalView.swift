@@ -48,7 +48,8 @@ struct ClipboardPasteHorizontalView: View {
                                         isQuickPasteModifierHeld: viewModel.isQuickPasteModifierHeld,
                                         isAIEnabled: viewModel.aiSettingsViewModel.isAIEnabled,
                                         quickPasteIndex: quickPasteIndexesByItemID[id],
-                                        isListScrolling: isListScrolling
+                                        isListScrolling: isListScrolling,
+                                        isQuickLookPresented: viewModel.quickLookItem?.id == id
                                     )
                                     .equatable()
                                     .id(id)
