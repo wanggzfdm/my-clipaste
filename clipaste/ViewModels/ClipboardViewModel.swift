@@ -64,6 +64,10 @@ final class ClipboardViewModel: ObservableObject {
     @Published var isLoadingMoreHistory = false
     var lastSelectedID: UUID? = nil
     @Published var quickLookItem: ClipboardItem? = nil
+    /// Current text selection inside the open QuickLook preview (nil when none).
+    @Published var quickLookSelectedText: String? = nil
+    var lastAutoCopiedQuickLookText: String? = nil
+    var quickLookSelectionCopyTask: Task<Void, Never>? = nil
     @Published var operationNotice: String? = nil
     @Published var highResImage: NSImage? = nil
     @Published var previewTargetSize: CGSize = .zero

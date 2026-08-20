@@ -20,6 +20,10 @@ extension ClipboardViewModel {
         quickLookLoadTask?.cancel()
         quickLookLoadTask = nil
         quickLookRequestedItemID = nil
+        quickLookSelectedText = nil
+        lastAutoCopiedQuickLookText = nil
+        quickLookSelectionCopyTask?.cancel()
+        quickLookSelectionCopyTask = nil
 
         withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
             quickLookItem = nil
@@ -43,6 +47,10 @@ extension ClipboardViewModel {
         quickLookLoadTask?.cancel()
         quickLookLoadTask = nil
         quickLookRequestedItemID = item.id
+        quickLookSelectedText = nil
+        lastAutoCopiedQuickLookText = nil
+        quickLookSelectionCopyTask?.cancel()
+        quickLookSelectionCopyTask = nil
 
         let shouldAnimatePresentation = quickLookItem == nil
         if shouldAnimatePresentation {

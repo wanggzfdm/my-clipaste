@@ -222,10 +222,15 @@ extension ClipboardViewModel {
             return nil
         }
 
-        // Cmd+C to copy the selected item(s)
+        // Cmd+C to copy the selected item(s).
+        // QuickLook only supports select-to-copy (no full-item copy from preview chrome).
         if keyCode == 8, event.modifierFlags.contains(.command) {
             if hasActiveTextInputResponder {
                 return event
+            }
+            if isQuickLookActive, let selectedText = selectedQuickLookText(), selectedText.isEmpty == false {
+                // Selection is already mirrored to the pasteboard on change.
+                return nil
             }
             if copySelection() {
                 return nil
@@ -318,6 +323,30 @@ private extension ClipboardViewModel {
         }
 
         return false
+    }
+
+    func selectedQuickLookText() -> String? {
+        if let stored = quickLookSelectedText, stored.isEmpty == false {
+            return stored
+        }
+
+        guard isQuickLookActive,
+              let textView = NSApp.keyWindow?.firstResponder as? NSTextView else {
+            return nil
+        }
+
+        let selectedRange = textView.selectedRange()
+        guard selectedRange.length > 0 else {
+            return nil
+        }
+
+        let text = textView.string as NSString
+        guard NSMaxRange(selectedRange) <= text.length else {
+            return nil
+        }
+
+        let selected = text.substring(with: selectedRange)
+        return selected.isEmpty ? nil : selected
     }
 
     var shouldBlockKeyboardNavigationForQuickLook: Bool {

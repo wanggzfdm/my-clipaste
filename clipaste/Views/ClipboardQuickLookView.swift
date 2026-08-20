@@ -6,28 +6,75 @@ struct ClipboardQuickLookView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if item.contentType == .image {
-                ClipboardQuickLookImageView(viewModel: viewModel)
-            } else if let parsedColor = item.fastParsedColor {
-                // 颜色预览：大色块 + 对比色等宽文字
-                ZStack {
-                    parsedColor
-                    Text(item.rawText ?? item.textPreview)
-                        .font(.system(size: 28, weight: .bold, design: .monospaced))
-                        .foregroundColor(parsedColor.isDark ? .white : .black)
+            ClipboardQuickLookToolbar(
+                item: item,
+                onClose: {
+                    viewModel.dismissQuickLook()
                 }
-                .frame(width: 280, height: 120)
+            )
 
-            } else {
-                ClipboardQuickLookTextContent(item: item)
-            }
+            quickLookContent
         }
-        // Popover 原生自带材质背景，无需额外设置
+    }
+
+    @ViewBuilder
+    private var quickLookContent: some View {
+        if item.contentType == .image {
+            ClipboardQuickLookImageView(viewModel: viewModel)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
+        } else if let parsedColor = item.fastParsedColor {
+            // 颜色预览：大色块 + 对比色等宽文字
+            ZStack {
+                parsedColor
+                Text(item.rawText ?? item.textPreview)
+                    .font(.system(size: 28, weight: .bold, design: .monospaced))
+                    .foregroundColor(parsedColor.isDark ? .white : .black)
+                    .textSelection(.enabled)
+            }
+            .frame(width: 280, height: 120)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(10)
+        } else {
+            ClipboardQuickLookTextContent(
+                item: item,
+                viewModel: viewModel
+            )
+        }
+    }
+}
+
+private struct ClipboardQuickLookToolbar: View {
+    let item: ClipboardItem
+    let onClose: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button(action: onClose) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Close Preview")
+            .accessibilityLabel("Close Preview")
+
+            Text(item.typeBadgeTitle())
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            Spacer(minLength: 12)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
     }
 }
 
 private struct ClipboardQuickLookTextContent: View {
     let item: ClipboardItem
+    @ObservedObject var viewModel: ClipboardViewModel
 
     @State private var highlightedAttr: NSAttributedString?
 
@@ -84,27 +131,30 @@ private struct ClipboardQuickLookTextContent: View {
         NativeTextView(
             text: safeText,
             attributedText: highlightedAttr,
-            style: isCodeContent ? .code : .plain
+            style: isCodeContent ? .code : .plain,
+            onSelectionChange: { selection in
+                viewModel.handleQuickLookTextSelectionChange(selection)
+            }
         )
-            .frame(
-                minWidth: previewMinWidth,
-                idealWidth: previewIdealWidth,
-                maxWidth: previewMaxWidth,
-                minHeight: previewMinHeight,
-                idealHeight: previewIdealHeight,
-                maxHeight: previewMaxHeight
-            )
-            .clipShape(RoundedRectangle(cornerRadius: isCodeContent ? 12 : 0, style: .continuous))
-            .overlay {
-                if isCodeContent {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                }
+        .frame(
+            minWidth: previewMinWidth,
+            idealWidth: previewIdealWidth,
+            maxWidth: previewMaxWidth,
+            minHeight: previewMinHeight,
+            idealHeight: previewIdealHeight,
+            maxHeight: previewMaxHeight
+        )
+        .clipShape(RoundedRectangle(cornerRadius: isCodeContent ? 12 : 0, style: .continuous))
+        .overlay {
+            if isCodeContent {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
             }
-            .padding(outerPadding)
-            .task(id: item.contentHash) {
-                highlightedAttr = await ClipboardQuickLookTextLoader.loadHighlightedText(for: item)
-            }
+        }
+        .padding(outerPadding)
+        .task(id: item.contentHash) {
+            highlightedAttr = await ClipboardQuickLookTextLoader.loadHighlightedText(for: item)
+        }
     }
 }
 

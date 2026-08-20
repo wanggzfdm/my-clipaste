@@ -237,6 +237,34 @@ extension ClipboardViewModel {
         }
     }
 
+    /// QuickLook select-to-copy: selecting text writes it to the pasteboard (debounced feedback).
+    func handleQuickLookTextSelectionChange(_ selection: String?) {
+        quickLookSelectedText = selection
+        guard let selection, selection.isEmpty == false else {
+            quickLookSelectionCopyTask?.cancel()
+            quickLookSelectionCopyTask = nil
+            lastAutoCopiedQuickLookText = nil
+            return
+        }
+
+        // Always keep pasteboard in sync with the live selection.
+        if selection != lastAutoCopiedQuickLookText {
+            PasteEngine.shared.writePlainTextToPasteboard(text: selection)
+            lastAutoCopiedQuickLookText = selection
+        }
+
+        // Debounce sound/notice so drag-select does not spam feedback.
+        quickLookSelectionCopyTask?.cancel()
+        quickLookSelectionCopyTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            guard quickLookSelectedText == selection else { return }
+            playCopySound()
+            showOperationNotice(String(localized: "Copied"))
+        }
+    }
+
+
     func playCopySound() {
         settingsViewModel.playCopySound()
     }
