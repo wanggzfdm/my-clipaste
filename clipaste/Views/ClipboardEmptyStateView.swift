@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ClipboardEmptyStateView: View {
-    @ObservedObject var viewModel: ClipboardViewModel
+    var viewModel: ClipboardViewModel
     @AppStorage("clipboardLayout") private var clipboardLayout: AppLayoutMode = .horizontal
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
 

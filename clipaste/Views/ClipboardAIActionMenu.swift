@@ -22,7 +22,7 @@ struct AIMenuSnapshot: Equatable {
 /// Standard (2.2.10) AI menu driven by live item + viewModel.
 struct ClipboardAIActionMenu<MenuLabel: View>: View {
     let item: ClipboardItem
-    @ObservedObject var viewModel: ClipboardViewModel
+    var viewModel: ClipboardViewModel
     @ViewBuilder var label: () -> MenuLabel
 
     var body: some View {

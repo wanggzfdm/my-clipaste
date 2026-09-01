@@ -4,7 +4,7 @@ import SwiftUI
 
 struct ClipboardItemActionModifier: ViewModifier {
     let item: ClipboardItem
-    @ObservedObject var viewModel: ClipboardViewModel
+    var viewModel: ClipboardViewModel
     @AppStorage("singleClickPaste") private var singleClickPaste = false
 
     func body(content: Content) -> some View {
@@ -29,7 +29,7 @@ extension View {
 
 struct ClipboardCardActionModifier: ViewModifier {
     let item: ClipboardItem
-    @ObservedObject var viewModel: ClipboardViewModel
+    var viewModel: ClipboardViewModel
     @AppStorage("singleClickPaste") private var singleClickPaste = false
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
 
@@ -49,7 +49,7 @@ struct ClipboardCardActionModifier: ViewModifier {
 
 private struct ClipboardItemTapBehaviorModifier: ViewModifier {
     let item: ClipboardItem
-    @ObservedObject var viewModel: ClipboardViewModel
+    var viewModel: ClipboardViewModel
     let singleClickPaste: Bool
     var usesPasteStyleClickModel: Bool = false
 
