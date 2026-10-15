@@ -31,14 +31,23 @@ struct ClipboardPasteHorizontalView: View {
                             .frame(width: 0, height: 1)
                             .id(Self.leadingEdgeAnchorID)
 
-                        ClipboardPasteHorizontalCardsView(
-                            viewModel: viewModel,
-                            quickPasteIndexesByItemID: quickPasteIndexesByItemID,
-                            isListScrolling: isListScrolling,
-                            pasteHelpText: pasteHelpText,
-                            quickPasteCoordinateSpaceName: quickPasteCoordinateSpaceName,
-                            horizontalPadding: Self.horizontalPadding
-                        )
+                        LazyHStack(alignment: .top, spacing: 20) {
+                            ForEach(viewModel.displayedItemIDs, id: \.self) { id in
+                                if let item = viewModel.item(for: id) {
+                                    pasteCard(for: item, id: id)
+                                }
+                            }
+                        }
+                        .id(viewModel.listContentEpoch)
+                        .animation(nil, value: viewModel.listContentEpoch)
+                        .animation(nil, value: viewModel.selectedGroupId)
+                        .animation(nil, value: viewModel.currentFilter)
+                        .animation(nil, value: viewModel.selectedBuiltInGroup)
+                        // 恢复与其它分组相同的边距实现（不要用 contentMargins，避免与 scrollTo 行为不一致）
+                        .padding(.horizontal, Self.horizontalPadding)
+                        .padding(.top, 13)
+                        .padding(.bottom, 5.5)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
                     }
                 }
                 .disableAnimationsWhenScrolling(shouldKillListAnimations)
@@ -103,7 +112,6 @@ struct ClipboardPasteHorizontalView: View {
             }
         }
     }
-
 
     private var pasteHelpText: Text {
         if singleClickPaste {
@@ -198,36 +206,9 @@ struct ClipboardPasteHorizontalView: View {
             CATransaction.commit()
         }
     }
-}
 
-private struct ClipboardPasteHorizontalCardsView: View {
-    var viewModel: ClipboardViewModel
-    let quickPasteIndexesByItemID: [UUID: Int]
-    let isListScrolling: Bool
-    let pasteHelpText: Text
-    let quickPasteCoordinateSpaceName: String
-    let horizontalPadding: CGFloat
-
-    var body: some View {
-        LazyHStack(alignment: .top, spacing: 20) {
-            ForEach(viewModel.displayedItemIDs, id: \.self) { id in
-                if let item = viewModel.item(for: id) {
-                    card(for: item, id: id)
-                }
-            }
-        }
-        .id(viewModel.listContentEpoch)
-        .animation(nil, value: viewModel.listContentEpoch)
-        .animation(nil, value: viewModel.selectedGroupId)
-        .animation(nil, value: viewModel.currentFilter)
-        .animation(nil, value: viewModel.selectedBuiltInGroup)
-        .padding(.horizontal, horizontalPadding)
-        .padding(.top, 13)
-        .padding(.bottom, 5.5)
-        .frame(maxHeight: .infinity, alignment: .bottom)
-    }
-
-    private func card(for item: ClipboardItem, id: UUID) -> some View {
+    @ViewBuilder
+    private func pasteCard(for item: ClipboardItem, id: UUID) -> some View {
         ClipboardPasteCardView(
             item: item,
             viewModel: viewModel,

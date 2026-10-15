@@ -106,9 +106,10 @@ struct ClipboardPasteCardView: View, Equatable {
     }
 
     private var cardSurfaceColor: Color {
-        // 贴近 Paste.app 的深色半透明卡片：让窗口玻璃透进来，卡片比背景暗一档而非纯实色。
+        // Slightly more opaque than the old glass+blur stack so cards stay readable
+        // without a per-card NSVisualEffectView.
         (colorScheme == .dark ? Color.black : Color(nsColor: .windowBackgroundColor))
-            .opacity(colorScheme == .dark ? 0.64 : 0.84)
+            .opacity(colorScheme == .dark ? 0.88 : 0.92)
     }
 
     private var headerSurfaceColor: Color {
@@ -133,7 +134,7 @@ struct ClipboardPasteCardView: View, Equatable {
 
     private var cardBorderColor: Color {
         isSelected
-            ? sourceAccentColor.opacity(0.85)
+            ? sourceAccentColor.opacity(0.72)
             : Color.primary.opacity(colorScheme == .dark ? (isHovered ? 0.16 : 0.08) : (isHovered ? 0.14 : 0.07))
     }
 

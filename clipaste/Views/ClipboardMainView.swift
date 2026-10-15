@@ -53,14 +53,14 @@ struct ClipboardMainView: View {
     var configuredContent: some View {
         panelLayoutContent
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-.background(Color.clear)
-        .background(panelBackground)
-        .background(
-            ClipboardPanelWindowObserver(
-                onWindowDidBecomeKey: handlePanelDidBecomeKey,
-                onWindowDidResignKey: handlePanelDidResignKey
+            .background(Color.clear)
+            .background(VisualEffectView(material: .popover, blendingMode: .behindWindow))
+            .background(
+                ClipboardPanelWindowObserver(
+                    onWindowDidBecomeKey: handlePanelDidBecomeKey,
+                    onWindowDidResignKey: handlePanelDidResignKey
+                )
             )
-        )
             .background(WindowAppearanceObserver(theme: appTheme))
             .overlay(alignment: .top) {
                 if let operationNotice = currentOperationNotice {
@@ -70,7 +70,7 @@ struct ClipboardMainView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: appTheme.chrome.panelCornerRadius(layout: clipboardLayout)))
+            .clipShape(RoundedRectangle(cornerRadius: (clipboardLayout == .vertical || clipboardLayout == .compact) ? 14 : 0))
             .ignoresSafeArea()
             .animation(.spring(response: 0.24, dampingFraction: 0.9), value: currentOperationNotice != nil)
             .onChange(of: clipboardLayout) {
@@ -149,19 +149,6 @@ struct ClipboardMainView: View {
                     viewModel.saveCustomTitle(for: item, title: title)
                 }
             }
-    }
-
-    /// 主面板背景：按 chrome token 选择材质。
-    /// - `.paste` 用更透的 `hudWindow` + 高光/暗色罩（`PastePanelBackgroundGlass`），对齐 Paste.app 玻璃质感；
-    /// - `.standard` 保持原 `popover` 材质，像素不变。
-    @ViewBuilder
-    private var panelBackground: some View {
-        if appTheme.chrome.usesLayeredHorizontalPanelBackground
-            || appTheme.chrome.usesWindowBackgroundGlassForVertical {
-            PastePanelBackgroundGlass(isHorizontal: clipboardLayout == .horizontal)
-        } else {
-            VisualEffectView(material: appTheme.chrome.horizontalPanelMaterial, blendingMode: .behindWindow)
-        }
     }
 
 }
