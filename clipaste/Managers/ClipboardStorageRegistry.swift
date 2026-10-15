@@ -1,7 +1,4 @@
-import CloudKit
-import CoreData
 import Foundation
-import os
 import SwiftData
 
 private final class ClipboardStorageBox: @unchecked Sendable {

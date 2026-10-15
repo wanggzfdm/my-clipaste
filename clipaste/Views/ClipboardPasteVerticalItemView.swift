@@ -13,7 +13,7 @@ struct ClipboardPasteVerticalItemView: View {
     }
 
     let item: ClipboardItem
-    @ObservedObject var viewModel: ClipboardViewModel
+    var viewModel: ClipboardViewModel
     let quickPasteIndex: Int?
     let usesPreviewPanel: Bool
     let allowsAutoPreview: Bool

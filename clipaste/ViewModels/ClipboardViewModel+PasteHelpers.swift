@@ -48,7 +48,9 @@ extension ClipboardViewModel {
         let text: String?
         switch item.contentType {
         case .text, .link, .code:
-            text = item.rawText
+            // rawText 已不再常驻内存，使用 textPreview（已截断为前 2000 字符）
+            // 超长文本通过 loadPlainText(id:) 按需从数据库加载
+            text = item.textPreview.isEmpty ? nil : item.textPreview
         case .color:
             text = item.textPreview.isEmpty ? nil : item.textPreview
         case .fileURL:

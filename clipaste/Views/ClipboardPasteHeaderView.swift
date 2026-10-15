@@ -12,7 +12,7 @@ struct ClipboardPasteHeaderView: View {
         static let groupBarSpacing: CGFloat = 6
     }
 
-    @ObservedObject var viewModel: ClipboardViewModel
+    var viewModel: ClipboardViewModel
     @Environment(\.openSettings) private var openSettings
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var preferencesStore: AppPreferencesStore
@@ -365,7 +365,8 @@ struct ClipboardPasteHeaderView: View {
             isSelected: viewModel.isAllScopeSelected,
             horizontalPadding: groupTabHorizontalPadding,
             verticalPadding: groupTabVerticalPadding,
-            iconSpacing: groupTabIconSpacing
+            iconSpacing: groupTabIconSpacing,
+            accentColor: appAccentColor
         ) {
             selectAllGroup()
         }
@@ -433,7 +434,8 @@ struct ClipboardPasteHeaderView: View {
                 isSelected: viewModel.isSmartFilterSelected(type),
                 horizontalPadding: groupTabHorizontalPadding,
                 verticalPadding: groupTabVerticalPadding,
-                iconSpacing: groupTabIconSpacing
+                iconSpacing: groupTabIconSpacing,
+                accentColor: appAccentColor
             ) {
                 selectSmartFilter(type)
             }
@@ -687,7 +689,8 @@ struct ClipboardPasteHeaderView: View {
             isSelected: isSelected || isDropTarget,
             horizontalPadding: groupTabHorizontalPadding,
             verticalPadding: groupTabVerticalPadding,
-            iconSpacing: groupTabIconSpacing
+            iconSpacing: groupTabIconSpacing,
+            accentColor: appAccentColor
         ) {
             selectBuiltInGroup(group)
         }
@@ -726,7 +729,8 @@ struct ClipboardPasteHeaderView: View {
             maxTextWidth: isVerticalLayout ? 60 : 80,
             horizontalPadding: groupTabHorizontalPadding,
             verticalPadding: groupTabVerticalPadding,
-            iconSpacing: groupTabIconSpacing
+            iconSpacing: groupTabIconSpacing,
+            accentColor: appAccentColor
         ) {
             selectCustomGroup(group.id)
         }

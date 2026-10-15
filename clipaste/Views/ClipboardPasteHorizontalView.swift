@@ -3,8 +3,7 @@ import QuartzCore
 import SwiftUI
 
 struct ClipboardPasteHorizontalView: View {
-    @ObservedObject var viewModel: ClipboardViewModel
-    let items: [ClipboardItem]
+    var viewModel: ClipboardViewModel
     @FocusState var focusedField: ClipboardPanelFocusField?
     @AppStorage("requireCmdToDelete") private var requireCmdToDelete: Bool = false
     @AppStorage("singleClickPaste") private var singleClickPaste = true
@@ -32,52 +31,14 @@ struct ClipboardPasteHorizontalView: View {
                             .frame(width: 0, height: 1)
                             .id(Self.leadingEdgeAnchorID)
 
-                        LazyHStack(alignment: .top, spacing: 20) {
-                            let indexByID: [UUID: Int] = Dictionary(
-                                uniqueKeysWithValues: viewModel.displayedItemIDs.enumerated().map {
-                                    ($0.element, $0.offset)
-                                }
-                            )
-                            ForEach(viewModel.displayedItemIDs, id: \.self) { id in
-                                if let item = viewModel.item(for: id) {
-                                    ClipboardPasteCardView(
-                                        item: item,
-                                        viewModel: viewModel,
-                                        isSelected: viewModel.selectedItemIDs.contains(id),
-                                        searchHighlight: viewModel.activeSearchQuery,
-                                        isQuickPasteModifierHeld: viewModel.isQuickPasteModifierHeld,
-                                        isAIEnabled: viewModel.aiSettingsViewModel.isAIEnabled,
-                                        quickPasteIndex: quickPasteIndexesByItemID[id],
-                                        isListScrolling: isListScrolling,
-                                        isQuickLookPresented: viewModel.quickLookItem?.id == id
-                                    )
-                                    .equatable()
-                                    .id(id)
-                                    .contentShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
-                                    .help(pasteHelpText)
-                                    .clipboardQuickPasteVisibleFrame(
-                                        id: id,
-                                        sourceIndex: indexByID[id] ?? 0,
-                                        coordinateSpaceName: quickPasteCoordinateSpaceName,
-                                        isTrackingEnabled: viewModel.isQuickPasteModifierHeld && !isListScrolling
-                                    )
-                                    .onAppear {
-                                        viewModel.loadMoreIfNeeded(currentItemID: id)
-                                    }
-                                    .transition(.identity)
-                                }
-                            }
-                        }
-                        .id(viewModel.listContentEpoch)
-                        .animation(nil, value: viewModel.listContentEpoch)
-                        .animation(nil, value: viewModel.selectedGroupId)
-                        .animation(nil, value: viewModel.currentFilter)
-                        .animation(nil, value: viewModel.selectedBuiltInGroup)
-                        // 恢复与其它分组相同的边距实现（不要用 contentMargins，避免与 scrollTo 行为不一致）
-                        .padding(.horizontal, Self.horizontalPadding)
-                        .padding(.top, 13)
-                        .padding(.bottom, 5.5)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        ClipboardPasteHorizontalCardsView(
+                            viewModel: viewModel,
+                            quickPasteIndexesByItemID: quickPasteIndexesByItemID,
+                            isListScrolling: isListScrolling,
+                            pasteHelpText: pasteHelpText,
+                            quickPasteCoordinateSpaceName: quickPasteCoordinateSpaceName,
+                            horizontalPadding: Self.horizontalPadding
+                        )
                     }
                 }
                 .disableAnimationsWhenScrolling(shouldKillListAnimations)
@@ -142,6 +103,7 @@ struct ClipboardPasteHorizontalView: View {
             }
         }
     }
+
 
     private var pasteHelpText: Text {
         if singleClickPaste {
@@ -238,6 +200,59 @@ struct ClipboardPasteHorizontalView: View {
     }
 }
 
+private struct ClipboardPasteHorizontalCardsView: View {
+    var viewModel: ClipboardViewModel
+    let quickPasteIndexesByItemID: [UUID: Int]
+    let isListScrolling: Bool
+    let pasteHelpText: Text
+    let quickPasteCoordinateSpaceName: String
+    let horizontalPadding: CGFloat
+
+    var body: some View {
+        LazyHStack(alignment: .top, spacing: 20) {
+            ForEach(viewModel.displayedItemIDs, id: \.self) { id in
+                if let item = viewModel.item(for: id) {
+                    card(for: item, id: id)
+                }
+            }
+        }
+        .id(viewModel.listContentEpoch)
+        .animation(nil, value: viewModel.listContentEpoch)
+        .animation(nil, value: viewModel.selectedGroupId)
+        .animation(nil, value: viewModel.currentFilter)
+        .animation(nil, value: viewModel.selectedBuiltInGroup)
+        .padding(.horizontal, horizontalPadding)
+        .padding(.top, 13)
+        .padding(.bottom, 5.5)
+        .frame(maxHeight: .infinity, alignment: .bottom)
+    }
+
+    private func card(for item: ClipboardItem, id: UUID) -> some View {
+        ClipboardPasteCardView(
+            item: item,
+            viewModel: viewModel,
+            isSelected: viewModel.selectedItemIDs.contains(id),
+            searchHighlight: viewModel.activeSearchQuery,
+            isQuickPasteModifierHeld: viewModel.isQuickPasteModifierHeld,
+            isAIEnabled: viewModel.aiSettingsViewModel.isAIEnabled,
+            quickPasteIndex: quickPasteIndexesByItemID[id],
+            isListScrolling: isListScrolling,
+            isQuickLookPresented: viewModel.quickLookItem?.id == id
+        )
+        .equatable()
+        .id(id)
+        .contentShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
+        .help(pasteHelpText)
+        .clipboardQuickPasteVisibleFrame(
+            id: id,
+            sourceIndex: viewModel.displayedItemIDs.firstIndex(of: id) ?? 0,
+            coordinateSpaceName: quickPasteCoordinateSpaceName,
+            isTrackingEnabled: viewModel.isQuickPasteModifierHeld && !isListScrolling
+        )
+        .transition(.identity)
+    }
+}
+
 #Preview {
     ClipboardPasteHorizontalPreview()
 }
@@ -248,7 +263,6 @@ private struct ClipboardPasteHorizontalPreview: View {
     var body: some View {
         ClipboardPasteHorizontalView(
             viewModel: ClipboardViewModel(),
-            items: [],
             focusedField: _focusedField
         )
     }

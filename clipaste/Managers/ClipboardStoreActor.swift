@@ -3,6 +3,12 @@ import SwiftData
 
 @ModelActor
 actor ClipboardStoreActor {
+    /// SwiftData 的 ModelContext 没有 reset() 方法。
+    /// save() 后上下文中的对象会在不再被引用时自动释放。
+    func resetContext() {
+        // no-op: SwiftData ModelContext 不支持 reset
+    }
+
     func diagnosticsSnapshot() -> ClipboardStoreDiagnosticsSnapshot {
         let recordCount = (try? modelContext.fetchCount(FetchDescriptor<ClipboardRecord>())) ?? 0
         let activeGroupDescriptor = FetchDescriptor<ClipboardGroupModel>(
@@ -60,7 +66,10 @@ actor ClipboardStoreActor {
             record.fullTextData = storedText.fullTextData
             record.isPlainTextTruncated = storedText.isTruncated
             try? markSyncAnchorUpdated()
-            try? modelContext.save()
+            if (try? modelContext.save()) != nil {
+                let entry = ClipboardSearchIndexer.Entry(id: record.id, plainText: record.plainText, appName: record.appLocalizedName, contentHash: record.contentHash, typeRawValue: record.typeRawValue, timestamp: record.timestamp)
+                Task { await ClipboardSearchIndexer.shared.upsert(entry) }
+            }
         }
     }
 
@@ -90,6 +99,8 @@ actor ClipboardStoreActor {
                 record.customTitle = normalizedTitle?.isEmpty == false ? normalizedTitle : nil
                 try markSyncAnchorUpdated()
                 try modelContext.save()
+                let entry = ClipboardSearchIndexer.Entry(id: record.id, plainText: record.plainText, appName: record.appLocalizedName, contentHash: record.contentHash, typeRawValue: record.typeRawValue, timestamp: record.timestamp)
+                Task { await ClipboardSearchIndexer.shared.upsert(entry) }
                 NotificationCenter.default.post(
                     name: .clipboardRecordDidChange,
                     object: nil,

@@ -19,11 +19,11 @@ struct MinimalGroupTabButton: View {
     var horizontalPadding: CGFloat = 12
     var verticalPadding: CGFloat = 5
     var iconSpacing: CGFloat = 5
+    let accentColor: AppAccentColor
     let action: () -> Void
 
     @State private var isHovered = false
     @Environment(\.colorScheme) private var colorScheme
-    @AppStorage("appAccentColor") private var appAccentColor: AppAccentColor = .defaultValue
 
     var body: some View {
         Button(action: action) {
@@ -66,7 +66,7 @@ struct MinimalGroupTabButton: View {
 
     private var foregroundStyle: AnyShapeStyle {
         if isSelected {
-            return AnyShapeStyle(appAccentColor.selectedContentColor)
+            return AnyShapeStyle(accentColor.selectedContentColor)
         }
         return AnyShapeStyle(isHovered ? Color.primary : Color.secondary)
     }
@@ -86,7 +86,7 @@ struct MinimalGroupTabButton: View {
 
     private var backgroundFillStyle: AnyShapeStyle {
         if isSelected {
-            return AnyShapeStyle(appAccentColor.color)
+            return AnyShapeStyle(accentColor.color)
         }
 
         if isHovered {
@@ -102,7 +102,7 @@ struct MinimalGroupTabButton: View {
 
     private var borderStyle: AnyShapeStyle {
         if isSelected {
-            return AnyShapeStyle(appAccentColor.color.opacity(colorScheme == .dark ? 0.82 : 0.64))
+            return AnyShapeStyle(accentColor.color.opacity(colorScheme == .dark ? 0.82 : 0.64))
         }
 
         if isHovered {

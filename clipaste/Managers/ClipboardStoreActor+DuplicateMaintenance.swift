@@ -3,15 +3,11 @@ import SwiftData
 
 extension ClipboardStoreActor {
     func repairDuplicateRecords() -> Int {
-        // Two passes:
-        // 1) Scan with batched fetch to identify which contentHashes have >1 row.
-        //    We don't keep references to records here — let the context drop
-        //    intermediate faults so memory stays flat regardless of table size.
-        // 2) Only fetch and merge the small subset of records belonging to a
-        //    duplicate hash.
         do {
             var counts: [String: Int] = [:]
+            var rawHashes: [String: Set<String>] = [:]
             counts.reserveCapacity(4096)
+            rawHashes.reserveCapacity(4096)
 
             let pageSize = 256
             var offset = 0
@@ -33,6 +29,7 @@ extension ClipboardStoreActor {
                     let contentHash = record.contentHash.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard contentHash.isEmpty == false else { continue }
                     counts[contentHash, default: 0] += 1
+                    rawHashes[contentHash, default: []].insert(record.contentHash)
                 }
 
                 offset += records.count
@@ -45,21 +42,23 @@ extension ClipboardStoreActor {
             var repairedCount = 0
 
             for hash in duplicateHashes {
-                let dupDescriptor = FetchDescriptor<ClipboardRecord>(
-                    predicate: #Predicate<ClipboardRecord> { record in
-                        record.contentHash == hash
+                for storedHash in rawHashes[hash] ?? [] {
+                    let dupDescriptor = FetchDescriptor<ClipboardRecord>(
+                        predicate: #Predicate<ClipboardRecord> { record in
+                            record.contentHash == storedHash
+                        }
+                    )
+                    let duplicates = (try? modelContext.fetch(dupDescriptor)) ?? []
+                    guard duplicates.count > 1 else { continue }
+
+                    let orderedRecords = duplicates.sorted(by: shouldPreferSurvivor)
+                    guard let survivor = orderedRecords.first else { continue }
+                    for duplicate in orderedRecords.dropFirst() {
+                        merge(duplicate, into: survivor)
+                        modelContext.delete(duplicate)
+                        repairedCount += 1
                     }
-                )
-                let duplicates = (try? modelContext.fetch(dupDescriptor)) ?? []
-                guard duplicates.count > 1 else { continue }
-
-                let orderedRecords = duplicates.sorted(by: shouldPreferSurvivor)
-                guard let survivor = orderedRecords.first else { continue }
-
-                for duplicate in orderedRecords.dropFirst() {
-                    merge(duplicate, into: survivor)
-                    modelContext.delete(duplicate)
-                    repairedCount += 1
+                    survivor.contentHash = hash
                 }
             }
 
@@ -78,42 +77,45 @@ extension ClipboardStoreActor {
     /// 把存量的超限内联文本迁移到 fullTextData(CKAsset 形态)。
     /// 单条超过 CloudKit 1MB 内联上限的记录会让整个导出队列卡死,
     /// 这个一次性修复能在不删数据的前提下疏通同步。
-    func repairOversizedInlineTextRecords() -> Int {
+    func repairOversizedInlineTextRecords() async -> Int {
+        var total = 0
+        var offset = 0
+        while !Task.isCancelled {
+            let step = repairOversizedTextPage(offset: offset)
+            total += step.repaired
+            if step.isComplete { break }
+            offset = step.nextOffset
+            await Task.yield()
+        }
+        return total
+    }
+
+    func repairOversizedTextPage(offset: Int) -> RepairPageStep {
         do {
-            var repairedCount = 0
-            var offset = 0
-
-            while true {
-                let records = try fetchRecordPage(offset: offset)
-                guard records.isEmpty == false else { break }
-
-                var repairedInPage = 0
-                for record in records {
-                    guard let text = record.plainText,
-                          text.utf8.count > ClipboardTextSyncPolicy.inlineLimitBytes else {
-                        continue
-                    }
-
-                    let storedText = ClipboardTextSyncPolicy.storedTextUsingPreferences(for: text)
-                    record.plainText = storedText.inlineText
-                    record.fullTextData = storedText.fullTextData
-                    record.isPlainTextTruncated = storedText.isTruncated
-                    repairedCount += 1
-                    repairedInPage += 1
-                }
-
-                if repairedInPage > 0 {
-                    try markSyncAnchorUpdated()
-                    try modelContext.save()
-                }
-                offset += records.count
-                guard records.count == Self.maintenancePageSize else { break }
+            let records = try fetchRecordPage(offset: offset)
+            guard records.isEmpty == false else {
+                return RepairPageStep(repaired: 0, nextOffset: offset, isComplete: true)
             }
-
-            return repairedCount
+            var repaired = 0
+            for record in records {
+                guard let text = record.plainText,
+                      text.utf8.count > ClipboardTextSyncPolicy.inlineLimitBytes else {
+                    continue
+                }
+                let storedText = ClipboardTextSyncPolicy.storedTextUsingPreferences(for: text)
+                record.plainText = storedText.inlineText
+                record.fullTextData = storedText.fullTextData
+                record.isPlainTextTruncated = storedText.isTruncated
+                repaired += 1
+            }
+            if repaired > 0 {
+                try markSyncAnchorUpdated()
+                try modelContext.save()
+            }
+            return RepairPageStep(repaired: repaired, nextOffset: offset + records.count, isComplete: records.count < Self.maintenancePageSize)
         } catch {
             print("❌ [ClipboardStoreActor] 修复超大文本记录失败: \(error)")
-            return 0
+            return RepairPageStep(repaired: 0, nextOffset: offset, isComplete: true)
         }
     }
 }

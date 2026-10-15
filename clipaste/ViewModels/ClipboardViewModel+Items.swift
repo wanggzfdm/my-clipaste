@@ -3,7 +3,7 @@ import SwiftUI
 
 extension ClipboardViewModel {
     var displayedItems: [ClipboardItem] {
-        displayedItemIDs.compactMap(item(for:))
+        displayedItemsCache
     }
 
     func item(for id: UUID) -> ClipboardItem? {
@@ -94,13 +94,18 @@ extension ClipboardViewModel {
     func refreshDisplayedItemsFromCurrentScope() {
         let query = activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        displayedItemIDs = items.compactMap { item in
+        let newIDs: [UUID] = items.compactMap { item -> UUID? in
             guard matchesCurrentDisplayScope(item, query: query) else {
                 return nil
             }
 
             return item.id
         }
+
+        guard displayedItemIDs != newIDs else { return }
+        displayedItemIDs = newIDs
+        displayedItemsCache = newIDs.compactMap(item(for:))
+        listContentEpoch &+= 1
     }
 }
 

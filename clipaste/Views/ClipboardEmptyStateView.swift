@@ -5,6 +5,8 @@ struct ClipboardEmptyStateView: View {
     @AppStorage("clipboardLayout") private var clipboardLayout: AppLayoutMode = .horizontal
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
 
+    @State private var shimmerOffset: CGFloat = -600
+
     private var skeletonCornerRadius: CGFloat {
         appTheme.panelVisualStyle == .paste ? 25 : 16
     }
@@ -28,7 +30,7 @@ struct ClipboardEmptyStateView: View {
         // 初始加载、或当前 scope 仍空且全量历史未就绪时，显示 skeleton 而非空托盘
         if isSearching { return false }
         if viewModel.isInitialHistoryLoading { return true }
-        if viewModel.displayedItems.isEmpty,
+        if viewModel.displayedItemIDs.isEmpty,
            viewModel.hasLoadedFullHistory == false,
            viewModel.isLoadingMoreHistory || viewModel.needsReloadOnNextPresentation {
             return true
@@ -38,6 +40,15 @@ struct ClipboardEmptyStateView: View {
 
     @ViewBuilder
     private var loadingPlaceholder: some View {
+        skeletonStack
+            .overlay {
+                shimmerOverlay
+            }
+            .clipped()
+    }
+
+    @ViewBuilder
+    private var skeletonStack: some View {
         if clipboardLayout == .horizontal {
             HStack(spacing: 20) {
                 ForEach(0..<4, id: \.self) { _ in
@@ -66,6 +77,31 @@ struct ClipboardEmptyStateView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.top, 12)
         }
+    }
+
+    /// 骨架屏扫光（shimmer）效果：一道高光自左向右掠过，提示正在加载历史。
+    private var shimmerOverlay: some View {
+        GeometryReader { geo in
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: Color.white.opacity(0.14), location: 0.5),
+                    .init(color: .clear, location: 1)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: geo.size.width * 0.6)
+            .offset(x: shimmerOffset)
+            .onAppear {
+                shimmerOffset = -geo.size.width * 0.7
+                withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+                    shimmerOffset = geo.size.width * 1.3
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .blendMode(.plusLighter)
     }
 
     private var emptyStateContent: some View {

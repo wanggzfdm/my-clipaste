@@ -2,6 +2,14 @@ import Foundation
 import SwiftData
 
 extension ClipboardStoreActor {
+    func searchIndexEntries(limit: Int, offset: Int) -> [ClipboardSearchIndexer.Entry] {
+        var descriptor = FetchDescriptor<ClipboardRecord>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+        descriptor.fetchLimit = limit
+        descriptor.fetchOffset = offset
+        return ((try? modelContext.fetch(descriptor)) ?? []).map {
+            ClipboardSearchIndexer.Entry(id: $0.id, plainText: $0.plainText, appName: $0.appLocalizedName, contentHash: $0.contentHash, typeRawValue: $0.typeRawValue, timestamp: $0.timestamp)
+        }
+    }
     func loadPreviewImageData(id: UUID) -> Data? {
         fetchStoredRecord(id: id)?.previewImageData
     }
@@ -15,7 +23,9 @@ extension ClipboardStoreActor {
     }
 
     func loadAppIconData(id: UUID) -> Data? {
-        fetchStoredRecord(id: id)?.appIconData
+        guard let record = fetchStoredRecord(id: id),
+              let bundleID = record.appBundleID else { return nil }
+        return AppIconManager.shared.iconPNGData(for: bundleID)
     }
 
     func loadPasteRecord(id: UUID) -> ClipboardPasteRecord? {
@@ -49,5 +59,14 @@ extension ClipboardStoreActor {
 
     func loadImageUTType(id: UUID) -> String? {
         fetchStoredRecord(id: id)?.imageUTType
+    }
+
+    func loadImageDataByHash(hash: String) -> Data? {
+        var descriptor = FetchDescriptor<ClipboardRecord>(
+            predicate: #Predicate { $0.contentHash == hash }
+        )
+        descriptor.fetchLimit = 1
+        guard let record = try? modelContext.fetch(descriptor).first else { return nil }
+        return record.imageData ?? record.previewImageData
     }
 }

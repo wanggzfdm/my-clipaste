@@ -8,24 +8,38 @@ extension ClipboardMainView {
 
     @ViewBuilder
     var mainContent: some View {
-        if displayedItems.isEmpty {
-            ClipboardEmptyStateView(viewModel: viewModel)
-        } else {
-            switch clipboardLayout {
-            case .horizontal:
-                ClipboardHorizontalView(
-                    viewModel: viewModel,
-                    items: displayedItems,
-                    focusedField: focusedFieldState
-                )
-            case .vertical, .compact:
-                ClipboardVerticalListView(
-                    viewModel: viewModel,
-                    items: displayedItems,
-                    focusedField: focusedFieldState
-                )
+        let hasDisplayedItems = !viewModel.displayedItemIDs.isEmpty
+        Group {
+            if hasDisplayedItems {
+                switch clipboardLayout {
+                case .horizontal:
+                    ClipboardHorizontalView(
+                        viewModel: viewModel,
+                        focusedField: focusedFieldState
+                    )
+                    .transition(listRevealTransition)
+                case .vertical, .compact:
+                    ClipboardVerticalListView(
+                        viewModel: viewModel,
+                        focusedField: focusedFieldState
+                    )
+                    .transition(listRevealTransition)
+                }
+            } else {
+                ClipboardEmptyStateView(viewModel: viewModel)
+                    .transition(.opacity)
             }
         }
+        // 页面加载：骨架屏 → 列表 的 spring 过渡（对齐 Paste 的 spring + move/opacity 机制）
+        .animation(.spring(response: 0.28, dampingFraction: 0.85), value: displayedItemIDs.isEmpty)
+    }
+
+    /// 历史列表从骨架屏浮现时的过渡：淡入 + 轻微放大 + 自底部上移；离开时仅淡出。
+    private var listRevealTransition: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.combined(with: .scale(scale: 0.985)).combined(with: .move(edge: .bottom)),
+            removal: .opacity
+        )
     }
 
     func focusSearchField(collapseSelectionToInsertionPoint: Bool = false) {

@@ -19,7 +19,7 @@ extension ClipboardMainView {
     func applyPendingListFocusIfPossible() -> Bool {
         guard let pendingListFocusRequest else { return false }
         guard isPanelKeyWindow else { return false }
-        guard !displayedItems.isEmpty else { return false }
+        guard !displayedItemIDs.isEmpty else { return false }
 
         switch pendingListFocusRequest {
         case .preserveSelection:

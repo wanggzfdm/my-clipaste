@@ -35,11 +35,21 @@ struct AppIconView: View {
 private enum AppIconResolver {
     static let cache = NSCache<NSString, NSImage>()
 
+    private static var cacheConfigured = false
+
+    static func configureCacheIfNeeded() {
+        guard cacheConfigured == false else { return }
+        cacheConfigured = true
+        cache.countLimit = 64
+        cache.totalCostLimit = 16 * 1024 * 1024 // 16MB
+    }
+
     static var clipasteFallbackIcon: NSImage? {
         NSImage(named: "AppIcon") ?? NSApp.applicationIconImage
     }
 
     static func icon(for bundleIdentifier: String?) -> NSImage? {
+        configureCacheIfNeeded()
         guard let bundleIdentifier = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
               bundleIdentifier.isEmpty == false else {
             return nil

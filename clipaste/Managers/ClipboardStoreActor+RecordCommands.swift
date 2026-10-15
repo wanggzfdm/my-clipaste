@@ -19,7 +19,7 @@ extension ClipboardStoreActor {
         sourceDeviceName: String?,
         captureMethodRawValue: String,
         captureSessionID: UUID?
-    ) {
+    ) async {
         let descriptor = FetchDescriptor<ClipboardRecord>(
             predicate: #Predicate<ClipboardRecord> { record in
                 record.contentHash == hash
@@ -30,6 +30,7 @@ extension ClipboardStoreActor {
             let now = Date()
 
             let existingRecords = try modelContext.fetch(descriptor)
+            let survivorRecord: ClipboardRecord
 
             if let existingRecord = existingRecords.sorted(by: shouldPreferSurvivor).first {
                 existingRecord.timestamp = now
@@ -37,9 +38,8 @@ extension ClipboardStoreActor {
                 existingRecord.appBundleID = appID
                 existingRecord.appLocalizedName = appName
                 existingRecord.appIconDominantColorHex = appIconDominantColorHex
-                if let appIconData {
-                    existingRecord.appIconData = appIconData
-                }
+                // appIconData 不再持久化到每条记录，运行时通过 AppIconManager 从系统获取
+                existingRecord.appIconData = nil
                 existingRecord.sourcePlatformRawValue = sourcePlatformRawValue
                 existingRecord.sourceDeviceName = sourceDeviceName
                 existingRecord.captureMethodRawValue = captureMethodRawValue
@@ -82,6 +82,7 @@ extension ClipboardStoreActor {
                     merge(duplicate, into: existingRecord)
                     modelContext.delete(duplicate)
                 }
+                survivorRecord = existingRecord
             } else {
                 let storedText = ClipboardTextSyncPolicy.storedTextUsingPreferences(for: text)
                 let newRecord = ClipboardRecord(
@@ -97,7 +98,7 @@ extension ClipboardStoreActor {
                     appBundleID: appID,
                     appLocalizedName: appName,
                     appIconDominantColorHex: appIconDominantColorHex,
-                    appIconData: appIconData,
+                    appIconData: nil,
                     rtfData: rtfData,
                     richTextArchiveData: richTextArchiveData,
                     sourcePlatformRawValue: sourcePlatformRawValue,
@@ -106,10 +107,26 @@ extension ClipboardStoreActor {
                     captureSessionID: captureSessionID
                 )
                 modelContext.insert(newRecord)
+                survivorRecord = newRecord
             }
 
             try markSyncAnchorUpdated()
             try modelContext.save()
+
+            // 直接用已有引用构建 FTS Entry，避免保存后重复 fetch
+            let entry = ClipboardSearchIndexer.Entry(
+                id: survivorRecord.id,
+                plainText: survivorRecord.plainText,
+                appName: survivorRecord.appLocalizedName,
+                contentHash: survivorRecord.contentHash,
+                typeRawValue: survivorRecord.typeRawValue,
+                timestamp: survivorRecord.timestamp
+            )
+            let indexed = await ClipboardSearchIndexer.shared.upsert(entry)
+            if !indexed {
+                print("❌ [ClipboardStoreActor] FTS upsert failed; scheduling rebuild")
+                await ClipboardSearchIndexer.shared.requestRebuild()
+            }
             NotificationCenter.default.post(
                 name: .clipboardRecordDidChange,
                 object: nil,
@@ -123,27 +140,40 @@ extension ClipboardStoreActor {
         }
     }
 
-    func cleanUpExpiredRecords(before expirationDate: Date) {
-        let descriptor = FetchDescriptor<ClipboardRecord>(
-            predicate: #Predicate { $0.timestamp < expirationDate }
-        )
-
+    func cleanUpExpiredRecords(before expirationDate: Date) async {
+        let batchSize = 200
         do {
-            let expiredRecords = try modelContext.fetch(descriptor)
-            guard !expiredRecords.isEmpty else { return }
+            var allExpiredIDs: [UUID] = []
+            while true {
+                var descriptor = FetchDescriptor<ClipboardRecord>(
+                    predicate: #Predicate { $0.timestamp < expirationDate }
+                )
+                descriptor.fetchLimit = batchSize
+                let expiredRecords = try modelContext.fetch(descriptor)
+                guard !expiredRecords.isEmpty else { break }
 
-            for record in expiredRecords {
-                modelContext.delete(record)
+                let expiredIDs = expiredRecords.map(\.id)
+                allExpiredIDs.append(contentsOf: expiredIDs)
+                for record in expiredRecords {
+                    modelContext.delete(record)
+                }
+                try markSyncAnchorUpdated()
+                try modelContext.save()
             }
 
-            try markSyncAnchorUpdated()
-            try modelContext.save()
+            guard !allExpiredIDs.isEmpty else { return }
+
+            let indexed = await ClipboardSearchIndexer.shared.delete(ids: allExpiredIDs)
+            if !indexed {
+                print("❌ [ClipboardStoreActor] FTS delete failed; scheduling rebuild")
+                await ClipboardSearchIndexer.shared.requestRebuild()
+            }
         } catch {
             print("❌ [清理任务] 清理过期记录失败: \(error)")
         }
     }
 
-    func delete(hash: String) {
+    func delete(hash: String) async {
         let descriptor = FetchDescriptor<ClipboardRecord>(
             predicate: #Predicate<ClipboardRecord> { record in
                 record.contentHash == hash
@@ -154,6 +184,11 @@ extension ClipboardStoreActor {
                 modelContext.delete(recordToDelete)
                 try markSyncAnchorUpdated()
                 try modelContext.save()
+                let indexed = await ClipboardSearchIndexer.shared.delete(ids: [recordToDelete.id])
+                if !indexed {
+                    print("❌ [ClipboardStoreActor] FTS delete failed; scheduling rebuild")
+                    await ClipboardSearchIndexer.shared.requestRebuild()
+                }
                 NotificationCenter.default.post(
                     name: .clipboardRecordDidChange,
                     object: nil,
@@ -168,20 +203,35 @@ extension ClipboardStoreActor {
         }
     }
 
-    func deleteUnpinnedRecords() {
-        let descriptor = FetchDescriptor<ClipboardRecord>(
-            predicate: #Predicate<ClipboardRecord> { $0.isPinned == false }
-        )
+    func deleteUnpinnedRecords() async {
+        let batchSize = 200
         do {
-            let records = try modelContext.fetch(descriptor)
-            guard !records.isEmpty else { return }
+            var allDeletedIDs: [UUID] = []
+            while true {
+                var descriptor = FetchDescriptor<ClipboardRecord>(
+                    predicate: #Predicate<ClipboardRecord> { $0.isPinned == false }
+                )
+                descriptor.fetchLimit = batchSize
+                let records = try modelContext.fetch(descriptor)
+                guard !records.isEmpty else { break }
 
-            for record in records {
-                modelContext.delete(record)
+                let deletedIDs = records.map(\.id)
+                allDeletedIDs.append(contentsOf: deletedIDs)
+                for record in records {
+                    modelContext.delete(record)
+                }
+                try markSyncAnchorUpdated()
+                try modelContext.save()
+                // 释放本页缓存，避免批量删除时内存累积
             }
 
-            try markSyncAnchorUpdated()
-            try modelContext.save()
+            guard !allDeletedIDs.isEmpty else { return }
+
+            let indexed = await ClipboardSearchIndexer.shared.delete(ids: allDeletedIDs)
+            if !indexed {
+                print("❌ [ClipboardStoreActor] FTS delete failed; scheduling rebuild")
+                await ClipboardSearchIndexer.shared.requestRebuild()
+            }
             NotificationCenter.default.post(name: .clipboardDataDidChange, object: nil)
         } catch {
             print("❌ [ClipboardStoreActor] 清空失败: \(error)")

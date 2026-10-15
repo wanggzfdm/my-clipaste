@@ -38,10 +38,8 @@ final class ClipboardImagePipeline {
     private var screenPinLoadTasks: [String: ScreenPinLoadEntry] = [:]
 
     private init() {
-        cache.countLimit = 256
-        // 64 MB upper bound — Quick Look 高分图 + 列表缩略图共享同一个 cache，
-        // 没有 byte-level 上限时菜单栏应用持续运行会一路涨到几百 MB。
-        cache.totalCostLimit = 64 * 1024 * 1024
+        cache.countLimit = 128
+        cache.totalCostLimit = 32 * 1024 * 1024
     }
 
     func invalidateAll() {

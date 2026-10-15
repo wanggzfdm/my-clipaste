@@ -2,6 +2,14 @@ import Foundation
 import SwiftData
 
 extension StorageManager {
+    nonisolated func searchIndexEntries(limit: Int, offset: Int) async -> [ClipboardSearchIndexer.Entry] {
+        let container = self.container
+        return await detachedRead {
+            let actor = ClipboardStoreActor(modelContainer: container)
+            return await actor.searchIndexEntries(limit: limit, offset: offset)
+        }
+    }
+
     nonisolated
     func fetchItemsInBackground(
         searchText: String,
@@ -16,11 +24,7 @@ extension StorageManager {
     }
 
     nonisolated
-    func fetchItemsPage(
-        searchText: String,
-        fetchLimit: Int,
-        offset: Int = 0
-    ) async -> [ClipboardItem] {
+    func fetchItemsPage(searchText: String, fetchLimit: Int, offset: Int = 0) async -> [ClipboardItem] {
         let container = self.container
         return await detachedRead {
             let searcher = ClipboardSearcher(modelContainer: container)
@@ -29,41 +33,42 @@ extension StorageManager {
     }
 
     nonisolated
-
-    func fetchGroups() async -> [ClipboardGroupItem] {
+    func fetchItemsByScope(
+        groupId: String?,
+        favoritesOnly: Bool,
+        typeFilterRawValue: String?,
+        fetchLimit: Int? = nil,
+        offset: Int = 0
+    ) async -> [ClipboardItem] {
         let container = self.container
         return await detachedRead {
-            let actor = ClipboardStoreActor(modelContainer: container)
-            return await actor.fetchAllGroups()
+            let searcher = ClipboardSearcher(modelContainer: container)
+            return await searcher.fetchByScope(
+                groupId: groupId,
+                favoritesOnly: favoritesOnly,
+                typeFilterRawValue: typeFilterRawValue,
+                fetchLimit: fetchLimit,
+                offset: offset
+            )
         }
     }
 
-    /// UI 驱动的分组读取(数据量极小)。
-    /// 直接在 MainActor 上读 `mainContext`,避免 MainActor await
-    /// `@ModelActor` (Background QoS) 造成的优先级反转 (Hang Risk)。
+    func fetchGroups() async -> [ClipboardGroupItem] {
+        await storeActor.fetchAllGroups()
+    }
+
     @MainActor
     func fetchAllGroupsOnMain() -> [ClipboardGroupItem] {
         let context = container.mainContext
-        let descriptor = FetchDescriptor<ClipboardGroupModel>(
-            predicate: #Predicate<ClipboardGroupModel> { group in
-                group.deletedAt == nil
-            },
-            sortBy: [SortDescriptor(\.sortOrder, order: .forward)]
-        )
-        let records = (try? context.fetch(descriptor)) ?? []
-        return records.map {
-            ClipboardGroupItem(
-                id: $0.id,
-                name: $0.name,
-                systemIconName: $0.resolvedSystemIconName,
-                sortOrder: $0.sortOrder
-            )
+        let descriptor = FetchDescriptor<ClipboardGroupModel>(predicate: #Predicate { $0.deletedAt == nil }, sortBy: [SortDescriptor(\.sortOrder, order: .forward)])
+        return ((try? context.fetch(descriptor)) ?? []).map {
+            ClipboardGroupItem(id: $0.id, name: $0.name, systemIconName: $0.resolvedSystemIconName, sortOrder: $0.sortOrder)
         }
     }
 
     func fetchItem(hash: String) async -> ClipboardItem? {
         let container = self.container
-        let snapshot = await detachedRead { () -> ClipboardRecordSnapshot? in
+        let snapshot = await detachedRead {
             let actor = ClipboardStoreActor(modelContainer: container)
             return await actor.fetchRecordSnapshot(hash: hash)
         }
@@ -79,69 +84,137 @@ extension StorageManager {
         }
     }
 
+    nonisolated func repairImportedMigrationTimestampsInBackground() -> Task<Int, Never> {
+        let container = self.container
+        return Task.detached(priority: .utility) {
+            var offset = 0
+            var count = 0
+            while !Task.isCancelled {
+                let actor = ClipboardStoreActor(modelContainer: container)
+                let step = await actor.repairImportedMigrationTimestampsPage(offset: offset)
+                count += step.repairedCount
+                if step.isComplete { break }
+                offset = step.nextOffset
+                await Task.yield()
+                do { try await Task.sleep(for: .milliseconds(100)) } catch { break }
+            }
+            return count
+        }
+    }
+
     func repairImportedMigrationTimestampsIfNeeded() async -> Int {
-        await storeActor.repairImportedMigrationTimestampsIfNeeded()
+        await repairImportedMigrationTimestampsInBackground().value
     }
 
     func repairTextClassificationsIfNeeded() async -> Int {
-        await storeActor.repairTextClassificationsIfNeeded()
+        let container = self.container
+        return await Task.detached(priority: .utility) {
+            var total = 0
+            var offset = 0
+            while !Task.isCancelled {
+                let actor = ClipboardStoreActor(modelContainer: container)
+                let step = await actor.repairTextClassificationsPage(offset: offset)
+                total += step.repaired
+                if step.isComplete { break }
+                offset = step.nextOffset
+                await Task.yield()
+            }
+            return total
+        }.value
     }
-
-    func touchSyncAnchor() async throws {
-        try await storeActor.touchSyncAnchor()
-    }
-
+    func touchSyncAnchor() async throws { try await storeActor.touchSyncAnchor() }
     func repairDuplicateRecords() async -> Int {
-        await storeActor.repairDuplicateRecords()
+        let container = self.container
+        return await Task.detached(priority: .utility) {
+            let actor = ClipboardStoreActor(modelContainer: container)
+            return await actor.repairDuplicateRecords()
+        }.value
     }
-
     func repairOversizedInlineTextRecords() async -> Int {
-        await storeActor.repairOversizedInlineTextRecords()
+        let container = self.container
+        return await Task.detached(priority: .utility) {
+            var total = 0
+            var offset = 0
+            while !Task.isCancelled {
+                let actor = ClipboardStoreActor(modelContainer: container)
+                let step = await actor.repairOversizedTextPage(offset: offset)
+                total += step.repaired
+                if step.isComplete { break }
+                offset = step.nextOffset
+                await Task.yield()
+            }
+            return total
+        }.value
     }
-
     func fetchDistinctAppBundleIDsForColorRepair() async -> [String] {
-        await storeActor.fetchDistinctAppBundleIDsForColorRepair()
+        let container = self.container
+        return await Task.detached(priority: .utility) {
+            let actor = ClipboardStoreActor(modelContainer: container)
+            return await actor.fetchDistinctAppBundleIDsForColorRepair()
+        }.value
     }
-
     func repairAppIconDominantColors(using colorsByBundleID: [String: String]) async -> Int {
-        await storeActor.repairAppIconDominantColors(using: colorsByBundleID)
+        let container = self.container
+        return await Task.detached(priority: .utility) {
+            var total = 0
+            var offset = 0
+            while !Task.isCancelled {
+                let actor = ClipboardStoreActor(modelContainer: container)
+                let step = await actor.repairAppIconColorsPage(offset: offset, colors: colorsByBundleID)
+                total += step.repaired
+                if step.isComplete { break }
+                offset = step.nextOffset
+                await Task.yield()
+            }
+            return total
+        }.value
     }
-
     func fetchDistinctAppBundleIDsMissingIconData() async -> [String] {
-        await storeActor.fetchDistinctAppBundleIDsMissingIconData()
+        let container = self.container
+        return await Task.detached(priority: .utility) {
+            let actor = ClipboardStoreActor(modelContainer: container)
+            return await actor.fetchDistinctAppBundleIDsMissingIconData()
+        }.value
     }
-
     func repairAppIconData(using iconDataByBundleID: [String: Data]) async -> Int {
-        await storeActor.repairAppIconData(using: iconDataByBundleID)
+        let container = self.container
+        return await Task.detached(priority: .utility) {
+            var total = 0
+            var offset = 0
+            while !Task.isCancelled {
+                let actor = ClipboardStoreActor(modelContainer: container)
+                let step = await actor.repairAppIconDataPage(offset: offset, iconData: iconDataByBundleID)
+                total += step.repaired
+                if step.isComplete { break }
+                offset = step.nextOffset
+                await Task.yield()
+            }
+            return total
+        }.value
     }
 
     func exportGroups() async throws -> [ClipboardGroupExport] {
         let container = self.container
         return try await Task.detached(priority: .utility) {
-            let actor = ClipboardStoreActor(modelContainer: container)
-            return try await actor.exportGroups()
+            try await ClipboardStoreActor(modelContainer: container).exportGroups()
         }.value
     }
 
     func exportRecordBatch(offset: Int, limit: Int) async throws -> [ClipboardRecordExport] {
         let container = self.container
         return try await Task.detached(priority: .utility) {
-            let actor = ClipboardStoreActor(modelContainer: container)
-            return try await actor.exportRecordBatch(offset: offset, limit: limit)
+            try await ClipboardStoreActor(modelContainer: container).exportRecordBatch(offset: offset, limit: limit)
         }.value
     }
 
     func exportPinnedRecordBatch(offset: Int, limit: Int) async throws -> ClipboardStoreExport {
         let container = self.container
         return try await Task.detached(priority: .utility) {
-            let actor = ClipboardStoreActor(modelContainer: container)
-            return try await actor.exportPinnedRecordBatch(offset: offset, limit: limit)
+            try await ClipboardStoreActor(modelContainer: container).exportPinnedRecordBatch(offset: offset, limit: limit)
         }.value
     }
 
-    func importStoreExport(_ payload: ClipboardStoreExport) async throws {
-        try await storeActor.importStoreExport(payload)
-    }
+    func importStoreExport(_ payload: ClipboardStoreExport) async throws { try await storeActor.importStoreExport(payload) }
 
     func loadPreviewImageData(id: UUID) async -> Data? {
         let container = self.container

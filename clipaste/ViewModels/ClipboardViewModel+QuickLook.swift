@@ -6,6 +6,10 @@ extension ClipboardViewModel {
         autoPreviewPresentedItemID != nil
     }
 
+    func handleQuickLookTextSelectionChange(_ selection: String?) {
+        quickLookSelectedText = selection
+    }
+
     func toggleQuickLook() {
         if isQuickLookActive {
             dismissQuickLook()

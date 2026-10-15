@@ -128,11 +128,13 @@ extension ClipboardMonitor {
             return
         }
 
-        let contentHash = CryptoHelper.sha256(data: imageData)
-        let previewData = ImageProcessor.generateThumbnail(
-            from: imageData,
-            maxPixelSize: ClipboardImagePreviewPolicy.storedPreviewMaxPixelSize
-        )
+        let (contentHash, previewData) = autoreleasepool {
+            (CryptoHelper.sha256(data: imageData),
+             ImageProcessor.generateThumbnail(
+                from: imageData,
+                maxPixelSize: ClipboardImagePreviewPolicy.storedPreviewMaxPixelSize
+             ))
+        }
         let recordExists = await storage.recordExists(hash: contentHash)
         // 已存在的 hash 走"置顶"路径，不再重复写入相同的 PNG 图标数据 —— 这块
         // 走 externalStorage，每次写都要重新落盘，对长时间运行的菜单栏应用是

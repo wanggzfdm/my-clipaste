@@ -106,10 +106,9 @@ struct ClipboardPasteCardView: View, Equatable {
     }
 
     private var cardSurfaceColor: Color {
-        // Slightly more opaque than the old glass+blur stack so cards stay readable
-        // without a per-card NSVisualEffectView.
+        // 贴近 Paste.app 的深色半透明卡片：让窗口玻璃透进来，卡片比背景暗一档而非纯实色。
         (colorScheme == .dark ? Color.black : Color(nsColor: .windowBackgroundColor))
-            .opacity(colorScheme == .dark ? 0.88 : 0.92)
+            .opacity(colorScheme == .dark ? 0.64 : 0.84)
     }
 
     private var headerSurfaceColor: Color {
@@ -134,7 +133,7 @@ struct ClipboardPasteCardView: View, Equatable {
 
     private var cardBorderColor: Color {
         isSelected
-            ? sourceAccentColor.opacity(0.72)
+            ? sourceAccentColor.opacity(0.85)
             : Color.primary.opacity(colorScheme == .dark ? (isHovered ? 0.16 : 0.08) : (isHovered ? 0.14 : 0.07))
     }
 
@@ -383,7 +382,7 @@ struct ClipboardPasteCardView: View, Equatable {
 
             if item.fileRepresentsImage {
                 ZStack {
-                    CheckerboardBackground()
+                    ClipboardCardCheckerboardBackground()
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                     ClipboardFileThumbnailView(fileURL: fileURL, maxPixelSize: Layout.thumbnailMaxPixelSize) {
@@ -421,7 +420,7 @@ struct ClipboardPasteCardView: View, Equatable {
         } else if item.contentType == .image {
             // ── 图片：等比例完整显示，绝不裁切原图 ──────────────────────
             ZStack {
-                CheckerboardBackground()
+                ClipboardCardCheckerboardBackground()
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
                 ClipboardThumbnailView(itemID: item.id, maxPixelSize: Layout.thumbnailMaxPixelSize) {
@@ -548,7 +547,7 @@ struct ClipboardPasteCardView: View, Equatable {
 
 /// 经典灰白棋盘格 — 透明图片可视化底色。
 /// 使用预渲染 tile + `.tile` 平铺，避免滚动时逐格 Canvas 重绘。
-private struct CheckerboardBackground: View {
+private struct ClipboardCardCheckerboardBackground: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {

@@ -74,7 +74,7 @@ private struct ClipboardQuickLookToolbar: View {
 
 private struct ClipboardQuickLookTextContent: View {
     let item: ClipboardItem
-    @ObservedObject var viewModel: ClipboardViewModel
+    var viewModel: ClipboardViewModel
 
     @State private var highlightedAttr: NSAttributedString?
 

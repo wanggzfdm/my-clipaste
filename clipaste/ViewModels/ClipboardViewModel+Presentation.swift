@@ -38,6 +38,18 @@ extension ClipboardViewModel {
         isPanelPresentationActive = false
         shouldAutoSelectFirstItemAfterNextRefresh = false
         dismissAutoPreviewIfNeeded()
+        ClipboardImagePipeline.shared.invalidateAll()
+        ListRenderEngine.shared.invalidateAll()
+        historyLoadTask?.cancel()
+        historyLoadTask = nil
+        items = []
+        displayedItemIDs = []
+        displayedItemsCache = []
+        itemIndexByID.removeAll(keepingCapacity: false)
+        itemIndexByHash.removeAll(keepingCapacity: false)
+        loadedHistoryCount = 0
+        hasLoadedFullHistory = false
+        needsReloadOnNextPresentation = true
     }
 
     func setupDataSubscriptions() {
@@ -120,7 +132,12 @@ extension ClipboardViewModel {
             guard self.items.isEmpty || self.hasPreparedPanelData == false else { return }
             self.applyLoadedItems(cachedItems)
             self.loadedHistoryCount = cachedItems.count
-            self.hasLoadedFullHistory = cachedItems.count < ClipboardHistoryWarmCache.defaultLimit
+            self.hasLoadedFullHistory = ClipboardHistoryPagingState.isComplete(
+                count: cachedItems.count,
+                limit: ClipboardHistoryWarmCache.defaultLimit
+            )
+            // hydrate 完成后清空 warm cache，释放重复持有的 ClipboardItem 内存
+            await ClipboardHistoryWarmCache.shared.clear()
         }
     }
 }

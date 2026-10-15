@@ -25,6 +25,10 @@ enum ClipboardSearchSupplementPolicyTests {
             "supplemental search must append only candidates with a new ID and content hash"
         )
 
-        print("ClipboardSearchSupplementPolicyTests passed")
+        let fetchFailure: Result<[Int], CocoaError> = .failure(CocoaError(.fileReadUnknown))
+        precondition(ClipboardSearchResultPolicy.shouldFallbackAfterFetchFailure(fetchFailure))
+        let fetchSuccess: Result<[Int], CocoaError> = .success([1])
+        precondition(!ClipboardSearchResultPolicy.shouldFallbackAfterFetchFailure(fetchSuccess))
+        print("ClipboardSearchSupplementPolicyTests passed: deduplication and fetch failure fallback")
     }
 }

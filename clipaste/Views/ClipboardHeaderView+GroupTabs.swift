@@ -32,7 +32,8 @@ extension ClipboardHeaderView {
             isSelected: viewModel.isAllScopeSelected,
             horizontalPadding: groupTabHorizontalPadding,
             verticalPadding: groupTabVerticalPadding,
-            iconSpacing: groupTabIconSpacing
+            iconSpacing: groupTabIconSpacing,
+            accentColor: appAccentColor
         ) {
             selectAllGroup()
         }
@@ -46,6 +47,7 @@ extension ClipboardHeaderView {
         .fixedSize(horizontal: true, vertical: false)
         .coordinateSpace(.named(GroupBarDropSpace.name))
         .onPreferenceChange(GroupTabFramePreferenceKey.self) { frames in
+            guard groupTabFrames != frames else { return }
             groupTabFrames = frames
         }
         .onDrop(
@@ -88,7 +90,8 @@ extension ClipboardHeaderView {
                 isSelected: viewModel.isSmartFilterSelected(type),
                 horizontalPadding: groupTabHorizontalPadding,
                 verticalPadding: groupTabVerticalPadding,
-                iconSpacing: groupTabIconSpacing
+                iconSpacing: groupTabIconSpacing,
+                accentColor: appAccentColor
             ) {
                 selectSmartFilter(type)
             }

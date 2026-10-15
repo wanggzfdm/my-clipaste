@@ -2,10 +2,6 @@ import SwiftUI
 
 
 extension ClipboardMainView {
-    var displayedItems: [ClipboardItem] {
-        viewModel.displayedItems
-    }
-
     var displayedItemIDs: [UUID] {
         viewModel.displayedItemIDs
     }
@@ -15,7 +11,7 @@ extension ClipboardMainView {
         HStack {
             Spacer()
 
-            Text("\(displayedItems.count) Items")
+            Text("\(displayedItemIDs.count) Items")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
 

@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ClipboardHorizontalView: View {
     var viewModel: ClipboardViewModel
-    let items: [ClipboardItem]
     @FocusState var focusedField: ClipboardPanelFocusField?
     @AppStorage("requireCmdToDelete") private var requireCmdToDelete: Bool = false
     @AppStorage("singleClickPaste") private var singleClickPaste = false
@@ -16,7 +15,6 @@ struct ClipboardHorizontalView: View {
         if appTheme.panelVisualStyle == .paste {
             ClipboardPasteHorizontalView(
                 viewModel: viewModel,
-                items: items,
                 focusedField: _focusedField
             )
         } else {
@@ -29,7 +27,8 @@ struct ClipboardHorizontalView: View {
             GeometryReader { viewportProxy in
                 ScrollView(.horizontal, showsIndicators: false) {
                     LazyHStack(alignment: .top, spacing: 20) {
-                        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        ForEach(Array(viewModel.displayedItemIDs.enumerated()), id: \.element) { index, itemID in
+                            if let item = viewModel.item(for: itemID) {
                             ClipboardCardView(
                                 item: item,
                                 viewModel: viewModel,
@@ -43,6 +42,7 @@ struct ClipboardHorizontalView: View {
                                     sourceIndex: index,
                                     coordinateSpaceName: quickPasteCoordinateSpaceName
                                 )
+                            }
                         }
                     }
                     .padding(.horizontal, 20)
@@ -107,7 +107,7 @@ struct ClipboardHorizontalView: View {
             frames: frames,
             viewportSize: viewportSize,
             axis: .horizontal,
-            itemIDsInDisplayOrder: items.map(\.id)
+            itemIDsInDisplayOrder: viewModel.displayedItemIDs
         )
 
         guard resolvedIndexes != quickPasteIndexesByItemID else { return }
@@ -140,7 +140,6 @@ private struct ClipboardHorizontalPreview: View {
     var body: some View {
         ClipboardHorizontalView(
             viewModel: ClipboardViewModel(),
-            items: [],
             focusedField: _focusedField
         )
     }

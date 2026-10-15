@@ -115,7 +115,10 @@ extension ClipboardViewModel {
                 isInitialHistoryLoading = false
                 isLoadingMoreHistory = pageItems.count == Self.initialVisibleItemBatchSize
                 loadedHistoryCount = items.count
-                hasLoadedFullHistory = pageItems.count < Self.initialVisibleItemBatchSize
+                hasLoadedFullHistory = ClipboardHistoryPagingState.isComplete(
+                    count: pageItems.count,
+                    limit: Self.initialVisibleItemBatchSize
+                )
                 return
             }
 
@@ -127,7 +130,10 @@ extension ClipboardViewModel {
         isInitialHistoryLoading = false
         isLoadingMoreHistory = pageItems.count == Self.initialVisibleItemBatchSize
         loadedHistoryCount = items.count
-        hasLoadedFullHistory = pageItems.count < Self.initialVisibleItemBatchSize
+        hasLoadedFullHistory = ClipboardHistoryPagingState.isComplete(
+            count: pageItems.count,
+            limit: Self.initialVisibleItemBatchSize
+        )
     }
 
     @MainActor
@@ -149,7 +155,10 @@ extension ClipboardViewModel {
         loadedHistoryCount = loadedCount
         // 内存窗口达到上限时 hasLoadedFullHistory 维持 false，让搜索路径知道
         // 需要回退到 SQL 直查；自然到达表尾时仍标记为 true。
-        hasLoadedFullHistory = fullyLoaded
+        hasLoadedFullHistory = fullyLoaded && ClipboardHistoryPagingState.isComplete(
+            count: loadedCount,
+            limit: Self.backgroundLoadMaxItems
+        )
     }
 
     @discardableResult

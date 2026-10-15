@@ -23,7 +23,9 @@ extension ClipboardImagePipeline {
                     continuation.resume(returning: nil)
                     return
                 }
-                let image = ImageProcessor.downsampleImage(from: data, maxPixelSize: maxPixelSize)
+                let image = autoreleasepool {
+                    ImageProcessor.downsampleImage(from: data, maxPixelSize: maxPixelSize)
+                }
                 continuation.resume(returning: cancellation?.isCancelled == true ? nil : image)
             }
         }
@@ -61,10 +63,12 @@ extension ClipboardImagePipeline {
                     return
                 }
 
-                let image = ImageProcessor.downsampleImage(
-                    from: fileURL,
-                    maxPixelSize: maxPixelSize
-                )
+                let image = autoreleasepool {
+                    ImageProcessor.downsampleImage(
+                        from: fileURL,
+                        maxPixelSize: maxPixelSize
+                    )
+                }
                 continuation.resume(
                     returning: cancellation?.isCancelled == true ? nil : image
                 )

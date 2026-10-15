@@ -12,6 +12,8 @@ final class AppIconManager {
     private let pngDataCache = NSCache<NSString, NSData>()
 
     private init() {
+        cache.countLimit = 64
+        cache.totalCostLimit = 8 * 1024 * 1024
         pngDataCache.countLimit = 128
         pngDataCache.totalCostLimit = 4 * 1024 * 1024
     }

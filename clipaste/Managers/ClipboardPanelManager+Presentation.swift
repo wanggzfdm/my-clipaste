@@ -19,6 +19,9 @@ extension ClipboardPanelManager {
     func showPanel() {
         guard !isVisible, let panel else { return }
 
+        // 触发延迟维护任务（首次打开面板后后台执行全表修复，避免冷启动内存峰值）
+        ClipboardRuntimeStore.shared.performDeferredMaintenance()
+
         // 0. 拍照留底：在呼出面板之前，记下当前正活跃的 App
         //    必须在 activate / makeKeyAndOrderFront 之前调用，否则 frontmostApplication 会变成自己
         previousActiveApp = NSWorkspace.shared.frontmostApplication

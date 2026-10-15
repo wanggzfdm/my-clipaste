@@ -120,8 +120,17 @@ extension ClipboardStoreActor {
     }
 
     func deleteGroup(id: String) {
-        let recordDescriptor = FetchDescriptor<ClipboardRecord>()
-        if let records = try? modelContext.fetch(recordDescriptor) {
+        // 分页处理避免全量 fetch 导致内存峰值
+        let batchSize = 200
+        var offset = 0
+        while true {
+            var recordDescriptor = FetchDescriptor<ClipboardRecord>(
+                sortBy: [SortDescriptor(\.id, order: .forward)]
+            )
+            recordDescriptor.fetchLimit = batchSize
+            recordDescriptor.fetchOffset = offset
+            guard let records = try? modelContext.fetch(recordDescriptor), !records.isEmpty else { break }
+
             for record in records {
                 var groupIDs = normalizedGroupIDs(primaryGroupID: record.groupId, groupIdsRaw: record.groupIdsRaw)
                 guard groupIDs.contains(id) else { continue }
@@ -129,7 +138,13 @@ extension ClipboardStoreActor {
                 record.groupId = groupIDs.first
                 record.groupIdsRaw = encodedGroupIDs(groupIDs)
             }
+            try? markSyncAnchorUpdated()
+            try? modelContext.save()
+            // 释放本页缓存，避免全表扫描内存累积
+            offset += records.count
+            guard records.count == batchSize else { break }
         }
+
         let groupDescriptor = FetchDescriptor<ClipboardGroupModel>(
             predicate: #Predicate<ClipboardGroupModel> { group in
                 group.id == id && group.deletedAt == nil

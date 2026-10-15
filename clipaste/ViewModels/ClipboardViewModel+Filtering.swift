@@ -62,7 +62,8 @@ extension ClipboardViewModel {
             return
         }
 
-        let shouldUseDatabaseSearch = !cleanQuery.isEmpty && hasLoadedFullHistory == false
+        let hasScopeFilter = groupId != nil || typeFilter != nil || builtInGroup != nil
+        let needsDatabaseSupplement = hasLoadedFullHistory == false && (!cleanQuery.isEmpty || hasScopeFilter)
         let snapshots = items.map { item in
             ClipboardFilterSnapshot(
                 id: item.id,
@@ -89,19 +90,66 @@ extension ClipboardViewModel {
                   self.filterGeneration == thisGeneration else { return }
             self.applyDisplayedItemIDsIfChanged(filteredIDs)
 
-            guard shouldUseDatabaseSearch else { return }
+            guard needsDatabaseSupplement else { return }
 
-            // 内存窗口外可能仍有匹配的历史记录 —— 派发一次 SQL 直查，
-            // 把命中记录合并进 items 后追加到结果尾部。
-            await self.runDatabaseSearchSupplement(
-                query: cleanQuery,
-                typeFilter: typeFilter,
-                groupId: groupId,
-                builtInGroup: builtInGroup,
-                visibleIDs: filteredIDs,
-                generation: thisGeneration
-            )
+            if cleanQuery.isEmpty {
+                await self.runDatabaseScopeSupplement(
+                    typeFilter: typeFilter,
+                    groupId: groupId,
+                    builtInGroup: builtInGroup,
+                    visibleIDs: filteredIDs,
+                    generation: thisGeneration
+                )
+            } else {
+                await self.runDatabaseSearchSupplement(
+                    query: cleanQuery,
+                    typeFilter: typeFilter,
+                    groupId: groupId,
+                    builtInGroup: builtInGroup,
+                    visibleIDs: filteredIDs,
+                    generation: thisGeneration
+                )
+            }
         }
+    }
+
+    @MainActor
+    private func runDatabaseScopeSupplement(
+        typeFilter: ClipboardContentType?,
+        groupId: String?,
+        builtInGroup: ClipboardBuiltInGroup?,
+        visibleIDs: [UUID],
+        generation: UInt
+    ) async {
+        let storage = StorageManager.shared
+        let dbResults = await storage.fetchItemsByScope(
+            groupId: groupId,
+            favoritesOnly: builtInGroup == .favorites,
+            typeFilterRawValue: typeFilter?.rawValue,
+            fetchLimit: 500,
+            offset: 0
+        )
+
+        guard Task.isCancelled == false, filterGeneration == generation else { return }
+        guard dbResults.isEmpty == false else { return }
+
+        let existingKeys = items.map {
+            ClipboardItemDeduplicationKey(id: $0.id, contentHash: $0.contentHash)
+        }
+        let candidateKeys = dbResults.map {
+            ClipboardItemDeduplicationKey(id: $0.id, contentHash: $0.contentHash)
+        }
+        let acceptedIndexes = ClipboardItemDeduplicationPolicy.uniqueAppendIndexes(
+            existing: existingKeys,
+            incoming: candidateKeys
+        )
+        let newItems = acceptedIndexes.map { dbResults[$0] }
+
+        guard newItems.isEmpty == false else { return }
+        guard Task.isCancelled == false, filterGeneration == generation else { return }
+
+        mergeItems(newItems, prepend: false)
+        applyDisplayedItemIDsIfChanged(visibleIDs + newItems.map(\.id))
     }
 
     @MainActor
@@ -153,6 +201,8 @@ extension ClipboardViewModel {
         guard displayedItemIDs != newIDs else { return }
 
         displayedItemIDs = newIDs
+        displayedItemsCache = newIDs.compactMap(item(for:))
+        listContentEpoch &+= 1
         reconcileSelectionAfterDisplayedItemsChange()
     }
 

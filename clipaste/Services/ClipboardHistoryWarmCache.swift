@@ -2,7 +2,7 @@ import Foundation
 
 actor ClipboardHistoryWarmCache {
     static let shared = ClipboardHistoryWarmCache()
-    static let defaultLimit = 80
+    static let defaultLimit = 40
 
     private var routeKey: String?
     private var items: [ClipboardItem] = []

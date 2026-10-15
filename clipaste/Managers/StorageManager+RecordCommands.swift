@@ -94,8 +94,9 @@ extension StorageManager {
 
     nonisolated
     func performAutoCleanup(before expirationDate: Date) {
-        let actor = self.cleanupActor
-        spawnTrackedTask(priority: .userInitiated) {
+        let container = self.container
+        spawnTrackedTask(priority: .utility) {
+            let actor = ClipboardStoreActor(modelContainer: container)
             await actor.cleanUpExpiredRecords(before: expirationDate)
         }
     }
@@ -119,10 +120,12 @@ extension StorageManager {
     nonisolated
     func processOCRForImage(hash: String, imageData: Data) {
         spawnTrackedTask(priority: .background) {
-            guard let text = await OCREngine.extractText(from: imageData) else { return }
-            guard Task.isCancelled == false else { return }
             let container = self.container
             let ocrActor = ClipboardStoreActor(modelContainer: container)
+            guard let loadedData = await ocrActor.loadImageDataByHash(hash: hash) else { return }
+            guard let text = await OCREngine.extractText(from: loadedData) else { return }
+            guard Task.isCancelled == false else { return }
+
             await ocrActor.updateRecordWithOCRText(hash: hash, text: text)
             guard Task.isCancelled == false else { return }
 

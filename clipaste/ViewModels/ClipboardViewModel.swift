@@ -35,10 +35,11 @@ final class ClipboardViewModel {
     }
 
     static let initialVisibleItemBatchSize = 80
-    static let backgroundPageBatchSize = 160
+    static let backgroundPageBatchSize = 80
     /// 后台加载窗口上限：超过此值后停止后台分页，依赖搜索路径走 SQL 直查。
     /// 避免菜单栏应用把全部历史（数万条）常驻 in-memory items 数组。
-    static let backgroundLoadMaxItems = 2000
+    /// 从 2000 降到 500 以控制内存占用，超出部分走数据库分页加载。
+    static let backgroundLoadMaxItems = 500
     /// 数据库搜索分页大小。
     static let databaseSearchPageSize = 200
 
@@ -51,10 +52,21 @@ final class ClipboardViewModel {
         didSet { refreshFilterForDataOrScopeChange() }
     }
     var displayedItemIDs: [UUID] = []
+    var displayedItemsCache: [ClipboardItem] = []
+    var listContentEpoch: UInt = 0
     var searchInput: String = "" {
         didSet { scheduleFilterForSearchInput() }
     }
     var activeSearchQuery: String = ""
+    var isSearchFilteringActive: Bool { !activeSearchQuery.isEmpty || !searchInput.isEmpty }
+    var isSearchCompositionActive: Bool = false
+    var suppressListAnimations: Bool = false
+    var searchResultScrollGeneration: UInt = 0
+    var searchResultScrollTargetID: UUID? = nil
+    var handledSearchResultScrollGeneration: UInt = 0
+    var quickLookSelectedText: String? = nil
+    var lastAutoCopiedQuickLookText: String? = nil
+    var quickLookSelectionCopyTask: Task<Void, Never>? = nil
     var currentFilter: ClipboardContentType? = nil {
         didSet { refreshFilterForDataOrScopeChange() }
     }

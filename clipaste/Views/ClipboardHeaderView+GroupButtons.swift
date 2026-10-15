@@ -39,7 +39,8 @@ extension ClipboardHeaderView {
             isSelected: isSelected || isDropTarget,
             horizontalPadding: groupTabHorizontalPadding,
             verticalPadding: groupTabVerticalPadding,
-            iconSpacing: groupTabIconSpacing
+            iconSpacing: groupTabIconSpacing,
+            accentColor: appAccentColor
         ) {
             selectBuiltInGroup(group)
         }
@@ -78,7 +79,8 @@ extension ClipboardHeaderView {
             maxTextWidth: isVerticalLayout ? 60 : 80,
             horizontalPadding: groupTabHorizontalPadding,
             verticalPadding: groupTabVerticalPadding,
-            iconSpacing: groupTabIconSpacing
+            iconSpacing: groupTabIconSpacing,
+            accentColor: appAccentColor
         ) {
             selectCustomGroup(group.id)
         }
