@@ -366,7 +366,7 @@ struct ClipboardPasteHeaderView: View {
             horizontalPadding: groupTabHorizontalPadding,
             verticalPadding: groupTabVerticalPadding,
             iconSpacing: groupTabIconSpacing,
-                accentColor: appAccentColor
+            accentColor: appAccentColor
         ) {
             selectAllGroup()
         }
@@ -690,7 +690,7 @@ struct ClipboardPasteHeaderView: View {
             horizontalPadding: groupTabHorizontalPadding,
             verticalPadding: groupTabVerticalPadding,
             iconSpacing: groupTabIconSpacing,
-                accentColor: appAccentColor
+            accentColor: appAccentColor
         ) {
             selectBuiltInGroup(group)
         }
@@ -730,7 +730,7 @@ struct ClipboardPasteHeaderView: View {
             horizontalPadding: groupTabHorizontalPadding,
             verticalPadding: groupTabVerticalPadding,
             iconSpacing: groupTabIconSpacing,
-                accentColor: appAccentColor
+            accentColor: appAccentColor
         ) {
             selectCustomGroup(group.id)
         }
