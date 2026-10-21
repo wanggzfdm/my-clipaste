@@ -151,14 +151,11 @@ struct ClipboardMainView: View {
             }
     }
 
-    /// 主面板背景：按 chrome token 选择材质。
-    /// - `.paste` 用更透的 `hudWindow` + 高光/暗色罩（`PastePanelBackgroundGlass`），对齐 Paste.app 玻璃质感；
-    /// - `.standard` 保持原 `popover` 材质，像素不变。
+    /// 主面板背景按当前系统能力使用 Liquid Glass，并保留旧系统的透明材质 fallback。
     @ViewBuilder
     private var panelBackground: some View {
-        if appTheme.chrome.usesLayeredHorizontalPanelBackground
-            || appTheme.chrome.usesWindowBackgroundGlassForVertical {
-            PastePanelBackgroundGlass(isHorizontal: clipboardLayout == .horizontal)
+        if appTheme.panelVisualStyle == .paste {
+            LiquidGlassPanelBackground()
         } else {
             VisualEffectView(material: appTheme.chrome.horizontalPanelMaterial, blendingMode: .behindWindow)
         }

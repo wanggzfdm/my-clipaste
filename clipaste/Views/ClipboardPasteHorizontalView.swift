@@ -15,8 +15,8 @@ struct ClipboardPasteHorizontalView: View {
     /// 否则 scrollTo(哨兵) 仍会把 33pt 左边距滚出视口。
     private static let leadingEdgeAnchorID = "clipboard-horizontal-leading-edge"
     /// 与历史实现一致：卡片与面板左缘的固定空隙。
-    private static let horizontalPadding: CGFloat = 33
-
+    private static let horizontalPadding: CGFloat = 24
+    static let cardSpacing: CGFloat = 16
     private var shouldKillListAnimations: Bool {
         isListScrolling || viewModel.suppressListAnimations
     }
@@ -209,7 +209,7 @@ private struct ClipboardPasteHorizontalCardsView: View {
     let horizontalPadding: CGFloat
 
     var body: some View {
-        LazyHStack(alignment: .top, spacing: 20) {
+        LazyHStack(alignment: .top, spacing: ClipboardPasteHorizontalView.cardSpacing) {
             ForEach(viewModel.displayedItemIDs, id: \.self) { id in
                 if let item = viewModel.item(for: id) {
                     card(for: item, id: id)
@@ -222,9 +222,9 @@ private struct ClipboardPasteHorizontalCardsView: View {
         .animation(nil, value: viewModel.currentFilter)
         .animation(nil, value: viewModel.selectedBuiltInGroup)
         .padding(.horizontal, horizontalPadding)
-        .padding(.top, 13)
-        .padding(.bottom, 5.5)
-        .frame(maxHeight: .infinity, alignment: .bottom)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
+        .frame(maxHeight: .infinity, alignment: .center)
     }
 
     private func card(for item: ClipboardItem, id: UUID) -> some View {

@@ -181,63 +181,31 @@ struct WindowBackgroundGlass: View {
 
 // MARK: - Paste Panel Glass (fork 2.1.5)
 
-/// Paste 风格主面板毛玻璃：更透的 behind-window blur + 轻量暗色罩层 + 顶部高光。
-/// 竖/横统一用 hudWindow，避免 popover 材质过实。
+/// Paste 风格主面板采用单个 behind-window 毛玻璃层；卡片只叠加 token 化表面。
 struct PastePanelBackgroundGlass: View {
     var isHorizontal: Bool = true
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ZStack {
-            // Base blur — fork horizontal path; also used for vertical paste for clearer glass.
-            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+            VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
                 .ignoresSafeArea()
 
-            // Soft dark wash — lighter than a solid fill so desktop shows through.
-            LinearGradient(
-                colors: darkWashColors,
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-
-            // Top specular highlight (glass edge)
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(isHorizontal
-                        ? (colorScheme == .dark ? 0.06 : 0.28)
-                        : (colorScheme == .dark ? 0.05 : 0.18)),
-                    Color.clear
-                ],
-                startPoint: .top,
-                endPoint: UnitPoint(x: 0.5, y: isHorizontal ? 0.45 : 0.35)
-            )
-            .ignoresSafeArea()
-
-            // Subtle bottom depth without killing translucency
-            LinearGradient(
-                colors: [
-                    Color.clear,
-                    Color.black.opacity(colorScheme == .dark ? 0.08 : 0.04)
-                ],
-                startPoint: UnitPoint(x: 0.5, y: 0.55),
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
+            Color.clear
+                .ignoresSafeArea()
         }
     }
 
-    private var darkWashColors: [Color] {
+    private var panelWashColors: [Color] {
         if colorScheme == .dark {
-            // fork used ~0.26/0.14 black; slightly lighter so blur reads more clearly.
             return [
-                Color.black.opacity(isHorizontal ? 0.18 : 0.14),
-                Color.black.opacity(isHorizontal ? 0.10 : 0.08)
+                Color.black.opacity(isHorizontal ? 0.025 : 0.02),
+                Color.black.opacity(isHorizontal ? 0.012 : 0.01)
             ]
         }
         return [
-            Color(nsColor: .windowBackgroundColor).opacity(0.20),
-            Color(nsColor: .windowBackgroundColor).opacity(0.10)
+            Color(nsColor: .windowBackgroundColor).opacity(0.24),
+            Color(nsColor: .windowBackgroundColor).opacity(0.14)
         ]
     }
 }

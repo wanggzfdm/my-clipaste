@@ -82,19 +82,25 @@ struct ClipboardPasteCardView: View, Equatable {
     }
 
     private var headerHeight: CGFloat {
-        54
+        Layout.headerHeight
     }
 
     private enum Layout {
-        static let baseCardSize: CGFloat = 252
-        static let cardScale: CGFloat = 0.98
-        static let cardSize = baseCardSize * cardScale
-        /// Match on-screen card content (~247pt); 2x retina headroom without over-decoding.
+        static let baseCardSize: CGFloat = 224
+        static let cardSize = baseCardSize
+        /// Match on-screen card content; 2x retina headroom without over-decoding.
         static let thumbnailMaxPixelSize: Int = 320
+        static let headerHeight: CGFloat = 44
+        static let appIconSize: CGFloat = 42
+    }
+
+
+    private var chrome: PanelChromeTokens {
+        PanelChromeTokens(.paste)
     }
 
     private var cardCornerRadius: CGFloat {
-        25
+        chrome.cardCornerRadius
     }
 
     private var sourceAccentColor: Color {
@@ -106,17 +112,11 @@ struct ClipboardPasteCardView: View, Equatable {
     }
 
     private var cardSurfaceColor: Color {
-        // 贴近 Paste.app 的深色半透明卡片：让窗口玻璃透进来，卡片比背景暗一档而非纯实色。
-        (colorScheme == .dark ? Color.black : Color(nsColor: .windowBackgroundColor))
-            .opacity(colorScheme == .dark ? 0.64 : 0.84)
+        Color(.sRGB, white: 0.075, opacity: 0.96)
     }
 
     private var headerSurfaceColor: Color {
-        if colorScheme == .dark {
-            return sourceAccentColor.opacity(0.98)
-        }
-
-        return sourceAccentColor.opacity(0.96)
+        Color(.sRGB, red: 0.02, green: 0.39, blue: 0.90, opacity: 1)
     }
 
     private var headerHighlightColor: Color {
@@ -132,16 +132,16 @@ struct ClipboardPasteCardView: View, Equatable {
     }
 
     private var cardBorderColor: Color {
-        isSelected
-            ? sourceAccentColor.opacity(0.85)
-            : Color.primary.opacity(colorScheme == .dark ? (isHovered ? 0.16 : 0.08) : (isHovered ? 0.14 : 0.07))
+        if isSelected {
+            return Color(nsColor: .systemBlue).opacity(chrome.cardSelectedBorderOpacity)
+        }
+        return Color.primary.opacity(isHovered ? chrome.cardHoverBorderOpacity : chrome.cardIdleBorderOpacity)
     }
 
     private var cardShadowColor: Color {
-        // Only the selected card casts a shadow — unselected cards skip offscreen shadow passes.
         isSelected
-            ? sourceAccentColor.opacity(colorScheme == .dark ? 0.18 : 0.12)
-            : Color.clear
+            ? Color(nsColor: .systemBlue).opacity(chrome.cardSelectedShadowOpacity)
+            : Color.black.opacity(chrome.cardIdleShadowOpacity)
     }
 
     private var resolvedAppIcon: NSImage? {
@@ -163,45 +163,21 @@ struct ClipboardPasteCardView: View, Equatable {
 
             contentBody
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 13)
+                .padding(.horizontal, 12)
                 .padding(.top, 8)
-                .padding(.bottom, 13)
+                .padding(.bottom, 10)
         }
         .frame(width: Layout.cardSize, height: Layout.cardSize)
-        // Solid surface only — panel glass already lives on the window chrome.
-        // Per-card NSVisualEffectView was the top GPU cost while scrolling.
+        // 毛玻璃只由面板容器提供；逐卡片 NSVisualEffectView 会在横向滚动时放大 GPU 成本。
         .background {
-            ZStack {
-                cardSurfaceColor
-
-                if isSelected {
-                    sourceAccentColor.opacity(colorScheme == .dark ? 0.08 : 0.06)
-                }
-
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(colorScheme == .dark ? 0.035 : 0.22),
-                        Color.white.opacity(colorScheme == .dark ? 0.012 : 0.09),
-                        Color.clear
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: cardCornerRadius, style: .continuous)
-                .stroke(
-                    cardBorderColor,
-                    lineWidth: isSelected ? 1.5 : 0.8
-                )
+            LiquidGlassSurface(cornerRadius: cardCornerRadius, isSelected: isSelected)
         }
         .clipShape(.rect(cornerRadius: cardCornerRadius, style: .continuous))
         .shadow(
-            color: cardShadowColor,
-            radius: isSelected ? 10 : 0,
+            color: isSelected ? Color.accentColor.opacity(0.22) : Color.black.opacity(0.10),
+            radius: isSelected ? 12 : 8,
             x: 0,
-            y: isSelected ? 4 : 0
+            y: isSelected ? 5 : 3
         )
         .animation(nil, value: showsQuickPasteBadge)
         .background {
@@ -293,9 +269,9 @@ struct ClipboardPasteCardView: View, Equatable {
 
                     LinearGradient(
                         colors: [
-                            headerHighlightColor,
-                            sourceAccentColor.opacity(colorScheme == .dark ? 0.10 : 0.08),
-                            headerDepthColor
+                            Color.white.opacity(0.16),
+                            Color.clear,
+                            Color.black.opacity(0.12)
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -304,13 +280,13 @@ struct ClipboardPasteCardView: View, Equatable {
             }
             .help(timestampHelpText)
 
-            AppIconView(appBundleID: item.sourceBundleIdentifier, size: 50)
-                .clipShape(.rect(cornerRadius: 14, style: .continuous))
+            AppIconView(appBundleID: item.sourceBundleIdentifier, size: Layout.appIconSize)
+                .clipShape(.rect(cornerRadius: 12, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .stroke(Color.white.opacity(colorScheme == .dark ? 0.16 : 0.22), lineWidth: 0.8)
                 }
-                .padding(.top, 6)
+                .padding(.top, 4)
                 .padding(.trailing, 10)
         }
         .frame(height: headerHeight)

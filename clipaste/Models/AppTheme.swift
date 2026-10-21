@@ -1,47 +1,36 @@
 import AppKit
 import SwiftUI
 
-enum AppTheme: String, CaseIterable, Identifiable {
+enum AppTheme: String, Identifiable {
     case system = "system"
     case light = "light"
     case dark = "dark"
-    /// Fork 2.1.5-inspired glass panel chrome (fixed dark).
-    case paste = "paste"
+
+    static let allCases: [AppTheme] = [.system, .light, .dark]
 
     var id: String { rawValue }
 
     var displayName: LocalizedStringKey {
         switch self {
-        case .system:
-            return "System"
-        case .light:
-            return "Light"
-        case .dark:
-            return "Dark"
-        case .paste:
-            return "Paste Style"
+        case .system: return "System"
+        case .light: return "Light"
+        case .dark: return "Dark"
         }
     }
 
     var colorScheme: ColorScheme? {
         switch self {
-        case .system:
-            return nil
-        case .light:
-            return .light
-        case .dark, .paste:
-            return .dark
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
         }
     }
 
     var nsAppearanceName: NSAppearance.Name? {
         switch self {
-        case .system:
-            return nil
-        case .light:
-            return .aqua
-        case .dark, .paste:
-            return .darkAqua
+        case .system: return nil
+        case .light: return .aqua
+        case .dark: return .darkAqua
         }
     }
 
@@ -51,20 +40,15 @@ enum AppTheme: String, CaseIterable, Identifiable {
     }
 
     var panelVisualStyle: PanelVisualStyle {
-        self == .paste ? .paste : .standard
+        switch self {
+        case .system, .light, .dark: .paste
+        }
     }
 
     private static let appearanceCache: [NSAppearance.Name: NSAppearance] = {
         var cache: [NSAppearance.Name: NSAppearance] = [:]
-
-        if let aquaAppearance = NSAppearance(named: .aqua) {
-            cache[.aqua] = aquaAppearance
-        }
-
-        if let darkAquaAppearance = NSAppearance(named: .darkAqua) {
-            cache[.darkAqua] = darkAquaAppearance
-        }
-
+        if let aquaAppearance = NSAppearance(named: .aqua) { cache[.aqua] = aquaAppearance }
+        if let darkAquaAppearance = NSAppearance(named: .darkAqua) { cache[.darkAqua] = darkAquaAppearance }
         return cache
     }()
 }

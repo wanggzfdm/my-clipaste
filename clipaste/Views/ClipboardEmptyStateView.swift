@@ -7,8 +7,12 @@ struct ClipboardEmptyStateView: View {
 
     @State private var shimmerOffset: CGFloat = -600
 
+    private var chrome: PanelChromeTokens {
+        appTheme.chrome
+    }
+
     private var skeletonCornerRadius: CGFloat {
-        appTheme.panelVisualStyle == .paste ? 25 : 16
+        chrome.cardCornerRadius
     }
 
     var body: some View {
@@ -52,14 +56,8 @@ struct ClipboardEmptyStateView: View {
         if clipboardLayout == .horizontal {
             HStack(spacing: 20) {
                 ForEach(0..<4, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: skeletonCornerRadius, style: .continuous)
-                        .fill(Color.primary.opacity(0.06))
+                    LiquidGlassSurface(cornerRadius: skeletonCornerRadius)
                         .frame(width: 240, height: 240)
-                        .overlay(alignment: .topLeading) {
-                            RoundedRectangle(cornerRadius: skeletonCornerRadius, style: .continuous)
-                                .fill(Color.primary.opacity(0.08))
-                                .frame(height: 52)
-                        }
                 }
             }
             .padding(.horizontal, 20)
@@ -68,8 +66,7 @@ struct ClipboardEmptyStateView: View {
         } else {
             VStack(spacing: 10) {
                 ForEach(0..<6, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.primary.opacity(0.06))
+                    LiquidGlassSurface(cornerRadius: chrome.verticalRowCornerRadius)
                         .frame(height: 76)
                 }
             }

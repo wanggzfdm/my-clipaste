@@ -63,34 +63,43 @@ struct ClipboardPasteVerticalItemView: View {
         "\(item.id.uuidString)-\(item.contentHash)-\(item.hasRTF)-search:\(viewModel.isSearchFilteringActive)"
     }
 
+    private var chrome: PanelChromeTokens {
+        PanelChromeTokens(.paste)
+    }
+
     private var rowFillStyle: AnyShapeStyle {
         if let parsedColor {
             return AnyShapeStyle(parsedColor)
         }
 
         if isSelected {
-            return AnyShapeStyle(appAccentColor.color.opacity(0.12))
+            return AnyShapeStyle(appAccentColor.color.opacity(chrome.verticalSelectedFillOpacity))
         }
 
         return AnyShapeStyle(
-            Color(nsColor: .controlBackgroundColor).opacity(isHovering ? 1.0 : 0.6)
+            Color(nsColor: .controlBackgroundColor)
+                .opacity(isHovering ? chrome.verticalHoverFillOpacity : chrome.verticalIdleFillOpacity)
         )
     }
 
     private var rowBorderColor: Color {
         if parsedColor != nil {
-            return Color.primary.opacity(0.12)
+            return Color.primary.opacity(chrome.verticalIdleBorderOpacity)
         }
 
         if isSelected {
-            return appAccentColor.color
+            return appAccentColor.color.opacity(chrome.verticalSelectedBorderOpacity)
         }
 
         if isHovering {
-            return appAccentColor.color.opacity(0.45)
+            return appAccentColor.color.opacity(chrome.verticalHoverBorderOpacity)
         }
 
-        return .clear
+        return Color.primary.opacity(chrome.verticalIdleBorderOpacity)
+    }
+
+    private var rowCornerRadius: CGFloat {
+        isCompact ? chrome.verticalCompactRowCornerRadius : chrome.verticalRowCornerRadius
     }
 
     private var timeTextColor: Color {
@@ -127,12 +136,7 @@ struct ClipboardPasteVerticalItemView: View {
             .padding(.horizontal, isCompact ? 6 : Layout.rowHorizontalPadding)
             .frame(height: isCompact ? 36 : 76)
             .background(
-                RoundedRectangle(cornerRadius: isCompact ? 6 : 12)
-                    .fill(rowFillStyle)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: isCompact ? 6 : 12)
-                    .stroke(rowBorderColor, lineWidth: isCompact ? 1.0 : 1.5)
+                LiquidGlassSurface(cornerRadius: rowCornerRadius, isSelected: isSelected)
             )
             .overlay(alignment: .topLeading) {
                 customTitleOverlay
