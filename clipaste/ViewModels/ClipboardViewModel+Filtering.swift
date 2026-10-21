@@ -44,6 +44,33 @@ extension ClipboardViewModel {
         )
     }
 
+    func applyImmediateScopeFilter(
+        groupId: String?,
+        typeFilter: ClipboardContentType?,
+        builtInGroup: ClipboardBuiltInGroup?
+    ) {
+        guard activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        let visibleIDs = items.compactMap { item -> UUID? in
+            if let groupId, item.groupIDs.contains(groupId) == false { return nil }
+            if let typeFilter, item.contentType != typeFilter { return nil }
+            if let builtInGroup, builtInGroup.matches(item) == false { return nil }
+            return item.id
+        }
+
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        transaction.animation = nil
+        withTransaction(transaction) {
+            applyDisplayedItemIDsIfChanged(visibleIDs)
+        }
+
+        let visibleItems = visibleIDs.compactMap(item(for:))
+        Task { @MainActor in
+            await ListRenderEngine.shared.prewarmTextPreviews(for: visibleItems)
+        }
+    }
+
     func performAsyncFilter(
         query: String,
         items: [ClipboardItem],

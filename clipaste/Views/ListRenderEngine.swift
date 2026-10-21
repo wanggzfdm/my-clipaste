@@ -68,6 +68,15 @@ final class ListRenderEngine {
 
         return result
     }
+    /// Prepares the limited visible rich-text cards while the panel is hidden,
+    /// so the next presentation does not swap plain text for rendered text mid-animation.
+    func prewarmTextPreviews(for items: [ClipboardItem]) async {
+        for item in items.prefix(ClipboardHistoryWarmCache.defaultLimit) {
+            guard item.hasRTF else { continue }
+            _ = await prepareText(for: item)
+        }
+    }
+
 
     /// 清除指定卡片的缓存（编辑保存后调用）
     func invalidate(id: UUID) {

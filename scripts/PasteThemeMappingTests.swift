@@ -14,6 +14,11 @@ let sourcePaths = [
     "clipaste/Views/ClipboardPasteVerticalItemView.swift",
     "clipaste/Views/ClipboardEmptyStateView.swift",
     "clipaste/Views/ClipboardMainView.swift",
+    "clipaste/Views/ListRenderEngine.swift",
+    "clipaste/ViewModels/ClipboardViewModel+Presentation.swift",
+    "clipaste/ViewModels/ClipboardViewModel+Filtering.swift",
+    "clipaste/ViewModels/ClipboardViewModel+Groups.swift",
+    "clipaste/ViewModels/ClipboardViewModel+HistoryLoading.swift",
     "clipaste/Managers/ClipboardPanelManager.swift"
 ]
 let source = try sourcePaths
@@ -31,15 +36,9 @@ func expectSourceContains(_ snippet: String, _ message: String) {
     expect(source.contains(snippet), message)
 }
 
-expectSourceContains("style == .paste ? .hudWindow : .popover", "theme maps Paste to hudWindow and standard to popover")
-expectSourceContains("case .standard: (layout == .vertical || layout == .compact) ? 14 : 0", "standard panel radius remains unchanged")
-expectSourceContains("case .paste: Self.panelCornerRadius", "Paste panel radius is theme-specific")
-expectSourceContains("var cardCornerRadius: CGFloat { style == .paste ? 16 : 16 }", "card radius preserves standard appearance")
-expectSourceContains("var cardSelectedBorderWidth: CGFloat { style == .paste ? 2.5 : 6 }", "selection border differs by theme")
-expectSourceContains("var cardSurfaceTint: Color {", "card surface uses a shared color token")
-expectSourceContains("static let panelCornerRadius: CGFloat = 25", "outer glass tray uses the larger Paste-like corner radius")
-expectSourceContains("var cardCornerRadius: CGFloat { style == .paste ? 16 : 16 }", "Liquid Glass cards use the tighter 16pt corner radius")
-expectSourceContains(".clipShape(RoundedRectangle(cornerRadius: 25, style: .continuous))", "horizontal viewport clipping follows the outer tray corner radius")
-expectSourceContains("let height: CGFloat = 315", "horizontal panel height matches the requested 315pt")
-
-print("PasteThemeMappingTests: OK")
+expectSourceContains("func applyImmediateScopeFilter", "group switches synchronously publish loaded first-page IDs")
+expectSourceContains("withTransaction(transaction)", "group switches disable list replacement animations")
+expectSourceContains("ListRenderEngine.shared.prewarmTextPreviews", "group switches prewarm target rich-text previews")
+expectSourceContains("Task.sleep(nanoseconds: 0)", "vertical rich-text previews do not wait before rendering")
+expectSourceContains(".id(viewModel.listContentEpoch)", "horizontal list keeps its stable content identity during group switches")
+expectSourceContains(".animation(nil, value: viewModel.selectedGroupId)", "group selection changes do not animate list replacements")

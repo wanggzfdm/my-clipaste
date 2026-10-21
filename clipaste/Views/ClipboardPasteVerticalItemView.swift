@@ -423,7 +423,7 @@ struct ClipboardPasteVerticalItemView: View {
             return
         }
 
-        try? await Task.sleep(nanoseconds: 180_000_000)
+        try? await Task.sleep(nanoseconds: 0)
         guard !Task.isCancelled else {
             return
         }

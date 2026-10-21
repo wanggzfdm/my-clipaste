@@ -64,7 +64,7 @@ extension ClipboardPanelManager {
         panel.becomeFirstResponder()
 
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.25
+            context.duration = 0.20
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().setFrame(visibleFrame, display: true)
             panel.animator().alphaValue = 1.0

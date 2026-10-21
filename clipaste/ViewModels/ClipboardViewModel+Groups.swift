@@ -229,6 +229,12 @@ private extension ClipboardViewModel {
         }
 
         shouldResetSelectionToFirstDisplayedItem = true
+        applyImmediateScopeFilter(
+            groupId: groupID,
+            typeFilter: filter,
+            builtInGroup: builtInGroup
+        )
+
         currentFilter = filter
         selectedBuiltInGroup = builtInGroup
         selectedGroupId = groupID

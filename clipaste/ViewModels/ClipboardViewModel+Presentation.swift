@@ -39,17 +39,17 @@ extension ClipboardViewModel {
         shouldAutoSelectFirstItemAfterNextRefresh = false
         dismissAutoPreviewIfNeeded()
         ClipboardImagePipeline.shared.invalidateAll()
-        ListRenderEngine.shared.invalidateAll()
         historyLoadTask?.cancel()
         historyLoadTask = nil
-        items = []
-        displayedItemIDs = []
-        displayedItemsCache = []
-        itemIndexByID.removeAll(keepingCapacity: false)
-        itemIndexByHash.removeAll(keepingCapacity: false)
-        loadedHistoryCount = 0
-        hasLoadedFullHistory = false
-        needsReloadOnNextPresentation = true
+
+        let visibleItems = displayedItemIDs.compactMap(item(for:))
+        Task { @MainActor in
+            await ListRenderEngine.shared.prewarmTextPreviews(for: visibleItems)
+        }
+
+        // Retain the bounded first page and its rendered-text cache across normal hides.
+        // Clipboard changes mark needsReloadOnNextPresentation and still trigger a refresh.
+        needsReloadOnNextPresentation = false
     }
 
     func setupDataSubscriptions() {
