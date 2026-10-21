@@ -8,7 +8,8 @@ import SwiftData
 class ClipboardPanelManager {
     static let shared = ClipboardPanelManager()
     static let panelLevel = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.dockWindow)) + 1)
-
+    static let horizontalScreenInset: CGFloat = 12
+    static let bottomScreenInset: CGFloat = 12
     var panel: ClipboardPanel?
     var eventMonitor: Any?
     var layoutObserver: Any?
@@ -190,9 +191,15 @@ class ClipboardPanelManager {
     func panelFrame(for layout: AppLayoutMode, on screen: NSScreen) -> NSRect {
         switch layout {
         case .horizontal:
-            let full = screen.frame          // 使用完整屏幕帧，覆盖 Dock 栏
-            let height: CGFloat = 320
-            return NSRect(x: full.minX, y: full.minY, width: full.width, height: height)
+            let full = screen.frame
+            let height: CGFloat = 315
+            let usableWidth = full.width - Self.horizontalScreenInset * 2
+            return NSRect(
+                x: full.minX + Self.horizontalScreenInset,
+                y: full.minY + Self.bottomScreenInset,
+                width: usableWidth,
+                height: height
+            )
         case .vertical, .compact:
             return verticalFrame(on: screen)
         }

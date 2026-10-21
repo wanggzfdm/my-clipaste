@@ -16,6 +16,8 @@ struct ClipboardPasteHorizontalView: View {
     private static let leadingEdgeAnchorID = "clipboard-horizontal-leading-edge"
     /// 与历史实现一致：卡片与面板左缘的固定空隙。
     private static let horizontalPadding: CGFloat = 24
+    static let verticalPadding: CGFloat = 16
+    static let bottomPadding: CGFloat = 16
     static let cardSpacing: CGFloat = 16
     private var shouldKillListAnimations: Bool {
         isListScrolling || viewModel.suppressListAnimations
@@ -41,6 +43,7 @@ struct ClipboardPasteHorizontalView: View {
                         )
                     }
                 }
+                .clipShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
                 .disableAnimationsWhenScrolling(shouldKillListAnimations)
                 .background {
                     ScrollActivityObserver(isScrolling: $isListScrolling)
@@ -222,9 +225,9 @@ private struct ClipboardPasteHorizontalCardsView: View {
         .animation(nil, value: viewModel.currentFilter)
         .animation(nil, value: viewModel.selectedBuiltInGroup)
         .padding(.horizontal, horizontalPadding)
-        .padding(.top, 16)
-        .padding(.bottom, 12)
-        .frame(maxHeight: .infinity, alignment: .center)
+        .padding(.top, ClipboardPasteHorizontalView.verticalPadding)
+        .padding(.bottom, ClipboardPasteHorizontalView.bottomPadding)
+        .frame(maxHeight: .infinity, alignment: .bottom)
     }
 
     private func card(for item: ClipboardItem, id: UUID) -> some View {

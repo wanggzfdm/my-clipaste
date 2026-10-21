@@ -9,8 +9,8 @@ struct LiquidGlassSurface: View {
 
     private var cardFill: Color {
         colorScheme == .dark
-            ? Color(.sRGB, white: 0.10, opacity: 0.94)
-            : Color(.sRGB, white: 0.96, opacity: 0.94)
+            ? Color(.sRGB, white: 0.12, opacity: 0.94)
+            : Color(.sRGB, white: 0.975, opacity: 0.94)
     }
 
     var body: some View {
@@ -26,7 +26,7 @@ struct LiquidGlassSurface: View {
 
             LinearGradient(
                 colors: [
-                    Color.white.opacity(colorScheme == .dark ? 0.10 : 0.34),
+                    Color.white.opacity(colorScheme == .dark ? 0.16 : 0.42),
                     Color.clear,
                     Color.black.opacity(colorScheme == .dark ? 0.10 : 0.04)
                 ],

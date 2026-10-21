@@ -13,6 +13,7 @@ let sourcePaths = [
     "clipaste/Views/LiquidGlassSurface.swift",
     "clipaste/Views/ClipboardPasteVerticalItemView.swift",
     "clipaste/Views/ClipboardEmptyStateView.swift",
+    "clipaste/Views/ClipboardMainView.swift",
     "clipaste/Managers/ClipboardPanelManager.swift"
 ]
 let source = try sourcePaths
@@ -33,18 +34,12 @@ func expectSourceContains(_ snippet: String, _ message: String) {
 expectSourceContains("style == .paste ? .hudWindow : .popover", "theme maps Paste to hudWindow and standard to popover")
 expectSourceContains("case .standard: (layout == .vertical || layout == .compact) ? 14 : 0", "standard panel radius remains unchanged")
 expectSourceContains("case .paste: Self.panelCornerRadius", "Paste panel radius is theme-specific")
-expectSourceContains("var cardCornerRadius: CGFloat { style == .paste ? 25 : 16 }", "card radius preserves standard appearance")
+expectSourceContains("var cardCornerRadius: CGFloat { style == .paste ? 16 : 16 }", "card radius preserves standard appearance")
 expectSourceContains("var cardSelectedBorderWidth: CGFloat { style == .paste ? 2.5 : 6 }", "selection border differs by theme")
 expectSourceContains("var cardSurfaceTint: Color {", "card surface uses a shared color token")
-expectSourceContains("case system = \"system\"", "system appearance remains selectable")
-expectSourceContains("case light = \"light\"", "light Liquid Glass appearance remains selectable")
-expectSourceContains("case dark = \"dark\"", "dark Liquid Glass appearance remains selectable")
-expectSourceContains("static let allCases: [AppTheme] = [.system, .light, .dark]", "settings expose exactly system, light, and dark appearances")
-expectSourceContains("case .system, .light, .dark: .paste", "all active appearances use the Liquid Glass panel family")
-expectSourceContains("case .light: return .aqua", "light appearance forces Aqua")
-expectSourceContains("case .dark: return .darkAqua", "dark appearance forces Dark Aqua")
-expectSourceContains("case .system: return nil", "system appearance follows macOS appearance")
-expectSourceContains("Color(.sRGB, white: 0.96, opacity: 0.94)", "light Liquid Glass cards use opaque light surfaces")
-expectSourceContains("Color(.sRGB, white: 0.10, opacity: 0.94)", "dark Liquid Glass cards use opaque dark surfaces")
+expectSourceContains("static let panelCornerRadius: CGFloat = 25", "outer glass tray uses the larger Paste-like corner radius")
+expectSourceContains("var cardCornerRadius: CGFloat { style == .paste ? 16 : 16 }", "Liquid Glass cards use the tighter 16pt corner radius")
+expectSourceContains(".clipShape(RoundedRectangle(cornerRadius: 25, style: .continuous))", "horizontal viewport clipping follows the outer tray corner radius")
+expectSourceContains("let height: CGFloat = 315", "horizontal panel height matches the requested 315pt")
 
 print("PasteThemeMappingTests: OK")

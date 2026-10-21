@@ -17,7 +17,7 @@ struct PanelChromeTokens {
         self.style = style
     }
 
-    static let panelCornerRadius: CGFloat = 16
+    static let panelCornerRadius: CGFloat = 25
 
     var horizontalPanelMaterial: NSVisualEffectView.Material {
         style == .paste ? .hudWindow : .popover
@@ -34,7 +34,7 @@ struct PanelChromeTokens {
     }
 
     var enablesSearchResultsTransition: Bool { style == .paste }
-    var cardCornerRadius: CGFloat { style == .paste ? 25 : 16 }
+    var cardCornerRadius: CGFloat { style == .paste ? 16 : 16 }
     var cardSelectedBorderWidth: CGFloat { style == .paste ? 2.5 : 6 }
     var cardUnselectedBorderWidth: CGFloat { style == .paste ? 1 : 0.8 }
     var cardAlwaysCastsShadow: Bool { style == .standard }
