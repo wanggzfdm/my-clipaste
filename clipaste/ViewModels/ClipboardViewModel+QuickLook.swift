@@ -8,6 +8,28 @@ extension ClipboardViewModel {
 
     func handleQuickLookTextSelectionChange(_ selection: String?) {
         quickLookSelectedText = selection
+        quickLookSelectionCopyTask?.cancel()
+        quickLookSelectionCopyTask = nil
+
+        guard let selection, !selection.isEmpty, selection != lastAutoCopiedQuickLookText else {
+            return
+        }
+
+        quickLookSelectionCopyTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled,
+                  let self,
+                  self.quickLookSelectedText == selection,
+                  self.lastAutoCopiedQuickLookText != selection else {
+                return
+            }
+
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(selection, forType: .string)
+            self.lastAutoCopiedQuickLookText = selection
+            self.quickLookSelectionCopyTask = nil
+        }
     }
 
     func toggleQuickLook() {

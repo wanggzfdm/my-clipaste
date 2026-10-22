@@ -33,7 +33,20 @@ final class ClipboardRuntimeStore {
         self.defaults = defaults
         containerFactory = .shared
         bootstrapper = ClipboardStoreBootstrapper()
-        currentRuntime = try! ClipboardModelContainerFactory.shared.makeRuntime()
+        let runtimeResolution: ClipboardRuntimeBootstrapResolution<ClipboardRuntime>
+        do {
+            runtimeResolution = try ClipboardRuntimeBootstrapPolicy.resolve(
+                preferredSyncEnabled: false,
+                makePersistentRuntime: { _ in try ClipboardModelContainerFactory.shared.makeRuntime() },
+                makeInMemoryRuntime: { try ClipboardModelContainerFactory.shared.makeInMemoryRuntime() }
+            )
+        } catch {
+            preconditionFailure("Unable to initialize clipboard runtime: \(error.localizedDescription)")
+        }
+        currentRuntime = runtimeResolution.value
+        if runtimeResolution.source == .memoryFallback {
+            print("⚠️ Clipboard storage recovery mode: \(runtimeResolution.preferredError?.localizedDescription ?? "unknown persistent-store error")")
+        }
         runtimeGeneration = UUID()
         defaults.set(false, forKey: "enable_icloud_sync")
         ClipboardStorageRegistry.update(storage: currentRuntime.storage)

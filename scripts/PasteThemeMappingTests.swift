@@ -23,7 +23,8 @@ let sourcePaths = [
     "clipaste/Views/ClipboardImageViews.swift",
     "clipaste/ViewModels/ClipboardViewModel+QuickLook.swift",
     "clipaste/Managers/ClipboardImagePipeline.swift",
-    "clipaste/Managers/ClipboardPanelManager.swift"
+    "clipaste/Managers/ClipboardPanelManager.swift",
+    "clipaste/Managers/ClipboardRuntimeStore.swift",
 ]
 let source = try sourcePaths
     .map { try String(contentsOf: projectRoot.appendingPathComponent($0), encoding: .utf8) }
@@ -65,3 +66,11 @@ expectSourceContains(".glassEffect(.regular, in: .rect(cornerRadius: 16))", "out
 expectSourceContains("Color.white.opacity(0.06)", "outer Liquid Glass uses a soft bright tint instead of a dark overlay")
 expect(!source.contains(".glassEffect(.clear, in: .rect(cornerRadius: 16))"), "outer Liquid Glass avoids the overly clear non-frosted variant")
 expectSourceContains(".overlay(Color.white.opacity(0.03))", "outer Liquid Glass fallback keeps its highlight subtle")
+expectSourceContains("func handleQuickLookTextSelectionChange", "Quick Look text selection is handled by the view model")
+expectSourceContains("Task.sleep(for: .milliseconds(120))", "Quick Look selection copying is debounced while dragging")
+expectSourceContains("pasteboard.setString(selection, forType: .string)", "Quick Look text selection is written to the system pasteboard")
+expectSourceContains("self.quickLookSelectedText == selection", "stale Quick Look selection copy tasks cannot overwrite the latest selection")
+expectSourceContains("lastAutoCopiedQuickLookText = selection", "Quick Look tracks the latest automatically copied selection")
+expectSourceContains("ClipboardRuntimeBootstrapPolicy.resolve", "runtime store resolves persistent startup failures through the recovery policy")
+expect(!source.contains("currentRuntime = try! ClipboardModelContainerFactory.shared.makeRuntime()"), "runtime store never crashes on a persistent-store initialization error")
+expectSourceContains("Clipboard storage recovery mode", "runtime store reports persistent-store recovery mode for diagnostics")
