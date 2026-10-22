@@ -84,6 +84,7 @@ struct ClipboardFileThumbnailView<Placeholder: View>: View {
 }
 
 struct ClipboardQuickLookImageView: View {
+    let itemID: UUID
     var viewModel: ClipboardViewModel
 
     var body: some View {
@@ -94,17 +95,22 @@ struct ClipboardQuickLookImageView: View {
                     .interpolation(.high)
                     .antialiased(true)
                     .aspectRatio(contentMode: .fit)
-                    .frame(
-                        width: viewModel.previewTargetSize.width,
-                        height: viewModel.previewTargetSize.height
-                    )
+                    .frame(maxWidth: 720, maxHeight: 540)
                     .cornerRadius(12)
                     .shadow(color: Color.black.opacity(0.2), radius: 20, x: 0, y: 10)
                     .padding(16)
             } else {
-                ProgressView()
-                    .frame(width: 220, height: 220)
-                    .padding(16)
+                ClipboardThumbnailView(itemID: itemID, maxPixelSize: 720) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 32, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 220, height: 220)
+                        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: 720, maxHeight: 540)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(16)
             }
         }
     }

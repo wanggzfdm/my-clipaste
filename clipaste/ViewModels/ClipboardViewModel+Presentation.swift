@@ -38,7 +38,6 @@ extension ClipboardViewModel {
         isPanelPresentationActive = false
         shouldAutoSelectFirstItemAfterNextRefresh = false
         dismissAutoPreviewIfNeeded()
-        ClipboardImagePipeline.shared.invalidateAll()
         historyLoadTask?.cancel()
         historyLoadTask = nil
 
@@ -47,6 +46,9 @@ extension ClipboardViewModel {
             await ListRenderEngine.shared.prewarmTextPreviews(for: visibleItems)
         }
 
+        for item in visibleItems where item.contentType == .image {
+            ClipboardImagePipeline.shared.prewarmThumbnail(for: item.id, maxPixelSize: 320)
+        }
         // Retain the bounded first page and its rendered-text cache across normal hides.
         // Clipboard changes mark needsReloadOnNextPresentation and still trigger a refresh.
         needsReloadOnNextPresentation = false

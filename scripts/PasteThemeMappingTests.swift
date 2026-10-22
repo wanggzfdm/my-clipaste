@@ -19,6 +19,10 @@ let sourcePaths = [
     "clipaste/ViewModels/ClipboardViewModel+Filtering.swift",
     "clipaste/ViewModels/ClipboardViewModel+Groups.swift",
     "clipaste/ViewModels/ClipboardViewModel+HistoryLoading.swift",
+    "clipaste/Views/ClipboardQuickLookView.swift",
+    "clipaste/Views/ClipboardImageViews.swift",
+    "clipaste/ViewModels/ClipboardViewModel+QuickLook.swift",
+    "clipaste/Managers/ClipboardImagePipeline.swift",
     "clipaste/Managers/ClipboardPanelManager.swift"
 ]
 let source = try sourcePaths
@@ -36,9 +40,16 @@ func expectSourceContains(_ snippet: String, _ message: String) {
     expect(source.contains(snippet), message)
 }
 
-expectSourceContains("func applyImmediateScopeFilter", "group switches synchronously publish loaded first-page IDs")
-expectSourceContains("withTransaction(transaction)", "group switches disable list replacement animations")
-expectSourceContains("ListRenderEngine.shared.prewarmTextPreviews", "group switches prewarm target rich-text previews")
-expectSourceContains("Task.sleep(nanoseconds: 0)", "vertical rich-text previews do not wait before rendering")
-expectSourceContains(".id(viewModel.listContentEpoch)", "horizontal list keeps its stable content identity during group switches")
-expectSourceContains(".animation(nil, value: viewModel.selectedGroupId)", "group selection changes do not animate list replacements")
+expectSourceContains("func prewarmTextPreviews", "visible rich-text previews are prepared before the next presentation")
+expectSourceContains("func prewarmThumbnail", "visible image cards can prewarm their thumbnail cache")
+expectSourceContains("ListRenderEngine.shared.prewarmTextPreviews", "hiding the panel prewarms visible rich-text previews")
+expectSourceContains("ClipboardImagePipeline.shared.prewarmThumbnail", "hiding the panel prewarms visible image thumbnails")
+expectSourceContains("Color(nsColor: .textBackgroundColor)", "space text preview has an opaque readable background")
+expectSourceContains("RoundedRectangle(cornerRadius: 12, style: .continuous)", "space text preview uses a bounded reading surface")
+expectSourceContains("loadOriginalImageData", "quick-look image pipeline falls back to original image data")
+expectSourceContains("applyQuickLookImageState(from: initialImage, preserveTargetSize: false)", "initial image decode recalculates the quick-look frame from its real aspect ratio")
+expectSourceContains("await ClipboardImagePipeline.shared.thumbnail", "quick-look image loading falls back to the card thumbnail when original preview data is unavailable")
+expectSourceContains("ClipboardQuickLookImageView(itemID: item.id", "Quick Look passes the selected image ID into its rendering fallback")
+expectSourceContains("ClipboardThumbnailView(itemID: itemID", "Quick Look rendering directly falls back to the card thumbnail view")
+expectSourceContains(".frame(maxWidth: 720, maxHeight: 540)", "Quick Look image rendering is bounded by a readable preview box")
+expectSourceContains(".aspectRatio(contentMode: .fit)", "Quick Look image rendering preserves its decoded aspect ratio")

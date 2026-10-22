@@ -193,10 +193,18 @@ extension ClipboardViewModel {
                 }
             }
 
-            guard let initialImage = await ClipboardQuickLookImageService.shared.loadInitialImage(
+            var initialImage = await ClipboardQuickLookImageService.shared.loadInitialImage(
                 for: itemID,
                 maxPixelSize: maxPixelSize
-            ),
+            )
+            if initialImage == nil {
+                initialImage = await ClipboardImagePipeline.shared.thumbnail(
+                    for: itemID,
+                    maxPixelSize: maxPixelSize
+                )
+            }
+
+            guard let initialImage,
                   !Task.isCancelled,
                   self.quickLookLoadGeneration == loadGeneration else {
                 if self.quickLookLoadGeneration == loadGeneration {
@@ -204,8 +212,7 @@ extension ClipboardViewModel {
                 }
                 return
             }
-
-            self.applyQuickLookImageState(from: initialImage, preserveTargetSize: true)
+            self.applyQuickLookImageState(from: initialImage, preserveTargetSize: false)
             guard !Task.isCancelled, self.quickLookLoadGeneration == loadGeneration else { return }
             self.quickLookRequestedItemID = nil
 

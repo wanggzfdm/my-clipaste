@@ -20,7 +20,7 @@ struct ClipboardQuickLookView: View {
     @ViewBuilder
     private var quickLookContent: some View {
         if item.contentType == .image {
-            ClipboardQuickLookImageView(viewModel: viewModel)
+            ClipboardQuickLookImageView(itemID: item.id, viewModel: viewModel)
                 .padding(.horizontal, 10)
                 .padding(.bottom, 10)
         } else if let parsedColor = item.fastParsedColor {
@@ -144,14 +144,12 @@ private struct ClipboardQuickLookTextContent: View {
             idealHeight: previewIdealHeight,
             maxHeight: previewMaxHeight
         )
-        .clipShape(RoundedRectangle(cornerRadius: isCodeContent ? 12 : 0, style: .continuous))
-        .overlay {
-            if isCodeContent {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-            }
-        }
         .padding(outerPadding)
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.primary.opacity(0.12), lineWidth: 1)
+        }
         .task(id: item.contentHash) {
             highlightedAttr = await ClipboardQuickLookTextLoader.loadHighlightedText(for: item)
         }

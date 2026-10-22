@@ -70,6 +70,12 @@ final class ClipboardImagePipeline {
         return image
     }
 
+    func prewarmThumbnail(for itemID: UUID, maxPixelSize: Int) {
+        Task {
+            _ = await thumbnail(for: itemID, maxPixelSize: maxPixelSize)
+        }
+    }
+
     func quickLookPreviewImage(for itemID: UUID, maxPixelSize: Int) async -> NSImage? {
         let cacheKey = "ql-preview-\(itemID.uuidString)-\(maxPixelSize)" as NSString
         if let cached = cache.object(forKey: cacheKey) {
