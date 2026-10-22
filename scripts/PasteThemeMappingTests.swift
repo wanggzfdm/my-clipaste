@@ -62,6 +62,6 @@ expectSourceContains("visibleItems.prefix(ClipboardHistoryWarmCache.defaultLimit
 expectSourceContains("Task.detached(priority: .utility)", "group resource warming stays off the selection critical path")
 expect(!source.contains(".id(viewModel.listContentEpoch)"), "horizontal group switches preserve card identity instead of recreating the whole card stack")
 expectSourceContains(".glassEffect(.regular, in: .rect(cornerRadius: 16))", "outer Liquid Glass keeps the full frosted regular material")
-expectSourceContains("Color.black.opacity(0.08)", "outer Liquid Glass adds only a subtle dark tint above the frosted material")
+expectSourceContains("Color.white.opacity(0.06)", "outer Liquid Glass uses a soft bright tint instead of a dark overlay")
 expect(!source.contains(".glassEffect(.clear, in: .rect(cornerRadius: 16))"), "outer Liquid Glass avoids the overly clear non-frosted variant")
 expectSourceContains(".overlay(Color.white.opacity(0.03))", "outer Liquid Glass fallback keeps its highlight subtle")

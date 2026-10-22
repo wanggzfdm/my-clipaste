@@ -51,7 +51,7 @@ struct LiquidGlassPanelBackground: View {
             ZStack {
                 Color.clear
                     .glassEffect(.regular, in: .rect(cornerRadius: 16))
-                Color.black.opacity(0.08)
+                Color.white.opacity(0.06)
             }
         } else {
             VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
