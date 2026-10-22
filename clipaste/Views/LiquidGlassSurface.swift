@@ -48,11 +48,14 @@ struct LiquidGlassSurface: View {
 struct LiquidGlassPanelBackground: View {
     var body: some View {
         if #available(macOS 26.0, *) {
-            Color.clear
-                .glassEffect(.regular, in: .rect(cornerRadius: 16))
+            ZStack {
+                Color.clear
+                    .glassEffect(.regular, in: .rect(cornerRadius: 16))
+                Color.black.opacity(0.08)
+            }
         } else {
             VisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)
-                .overlay(Color.white.opacity(0.06))
+                .overlay(Color.white.opacity(0.03))
         }
     }
 }
