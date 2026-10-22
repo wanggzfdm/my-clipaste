@@ -229,14 +229,69 @@ private extension ClipboardViewModel {
         }
 
         shouldResetSelectionToFirstDisplayedItem = true
-        applyImmediateScopeFilter(
-            groupId: groupID,
-            typeFilter: filter,
-            builtInGroup: builtInGroup
-        )
-
+        scopePresentationGeneration &+= 1
+        let generation = scopePresentationGeneration
+        isScopeRefreshSuppressed = true
         currentFilter = filter
         selectedBuiltInGroup = builtInGroup
         selectedGroupId = groupID
+        isScopeRefreshSuppressed = false
+
+        prepareAndCommitDisplayedScope(
+            groupId: groupID,
+            typeFilter: filter,
+            builtInGroup: builtInGroup,
+            generation: generation
+        )
+    }
+
+    func prepareAndCommitDisplayedScope(
+        groupId: String?,
+        typeFilter: ClipboardContentType?,
+        builtInGroup: ClipboardBuiltInGroup?,
+        generation: UInt
+    ) {
+        guard activeSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            performAsyncFilter(
+                query: activeSearchQuery,
+                items: items,
+                groupId: groupId,
+                typeFilter: typeFilter,
+                builtInGroup: builtInGroup
+            )
+            return
+        }
+
+        let visibleIDs = items.compactMap { item -> UUID? in
+            if let groupId, item.groupIDs.contains(groupId) == false { return nil }
+            if let typeFilter, item.contentType != typeFilter { return nil }
+            if let builtInGroup, builtInGroup.matches(item) == false { return nil }
+            return item.id
+        }
+        let visibleItems = visibleIDs.compactMap(item(for:))
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await ListRenderEngine.shared.prewarmTextPreviews(for: visibleItems)
+            for item in visibleItems where item.hasImagePreview || item.hasImageData {
+                _ = await ClipboardImagePipeline.shared.thumbnail(for: item.id, maxPixelSize: 720)
+            }
+
+            guard self.scopePresentationGeneration == generation else { return }
+
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            transaction.animation = nil
+            withTransaction(transaction) {
+                self.applyDisplayedItemIDsIfChanged(visibleIDs)
+            }
+            self.performAsyncFilter(
+                query: self.activeSearchQuery,
+                items: self.items,
+                groupId: groupId,
+                typeFilter: typeFilter,
+                builtInGroup: builtInGroup
+            )
+        }
     }
 }

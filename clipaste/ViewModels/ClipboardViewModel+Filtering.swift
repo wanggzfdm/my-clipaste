@@ -224,7 +224,7 @@ extension ClipboardViewModel {
         applyDisplayedItemIDsIfChanged(visibleIDs + newItems.map(\.id))
     }
 
-    private func applyDisplayedItemIDsIfChanged(_ newIDs: [UUID]) {
+    func applyDisplayedItemIDsIfChanged(_ newIDs: [UUID]) {
         guard displayedItemIDs != newIDs else { return }
 
         displayedItemIDs = newIDs

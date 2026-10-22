@@ -219,7 +219,6 @@ private struct ClipboardPasteHorizontalCardsView: View {
                 }
             }
         }
-        .id(viewModel.listContentEpoch)
         .animation(nil, value: viewModel.listContentEpoch)
         .animation(nil, value: viewModel.selectedGroupId)
         .animation(nil, value: viewModel.currentFilter)

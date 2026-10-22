@@ -68,10 +68,10 @@ final class ClipboardViewModel {
     var lastAutoCopiedQuickLookText: String? = nil
     var quickLookSelectionCopyTask: Task<Void, Never>? = nil
     var currentFilter: ClipboardContentType? = nil {
-        didSet { refreshFilterForDataOrScopeChange() }
+        didSet { if !isScopeRefreshSuppressed { refreshFilterForDataOrScopeChange() } }
     }
     var selectedBuiltInGroup: ClipboardBuiltInGroup? = nil {
-        didSet { refreshFilterForDataOrScopeChange() }
+        didSet { if !isScopeRefreshSuppressed { refreshFilterForDataOrScopeChange() } }
     }
     var selectedItemIDs: Set<UUID> = []
     var listScrollRequest: ClipboardListScrollRequest? = nil
@@ -88,8 +88,10 @@ final class ClipboardViewModel {
     var selectedGroupID: UUID? = nil
     var customGroups: [ClipboardGroupItem] = []
     var selectedGroupId: String? = nil {
-        didSet { refreshFilterForDataOrScopeChange() }
+        didSet { if !isScopeRefreshSuppressed { refreshFilterForDataOrScopeChange() } }
     }
+    var isScopeRefreshSuppressed = false
+    var scopePresentationGeneration: UInt = 0
     var draggedGroup: ClipboardGroupItem? = nil
     var titleEditorItem: ClipboardItem? = nil
     var quickPasteModifier: ModifierKey = ModifierKey.quickPastePreference()
