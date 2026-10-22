@@ -87,6 +87,16 @@ struct ClipboardQuickLookImageView: View {
     let itemID: UUID
     var viewModel: ClipboardViewModel
 
+    private var previewFrameSize: CGSize {
+        let visibleFrame = NSScreen.main?.visibleFrame
+            ?? NSScreen.screens.first?.visibleFrame
+            ?? .zero
+        return CGSize(
+            width: visibleFrame.width * 0.52,
+            height: visibleFrame.height * 0.62
+        )
+    }
+
     var body: some View {
         Group {
             if let image = viewModel.highResImage {
@@ -95,7 +105,7 @@ struct ClipboardQuickLookImageView: View {
                     .interpolation(.high)
                     .antialiased(true)
                     .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: 720, maxHeight: 540)
+                    .frame(width: previewFrameSize.width, height: previewFrameSize.height)
                     .cornerRadius(12)
                     .shadow(color: Color.black.opacity(0.2), radius: 20, x: 0, y: 10)
                     .padding(16)
@@ -108,7 +118,7 @@ struct ClipboardQuickLookImageView: View {
                         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .aspectRatio(contentMode: .fit)
-                .frame(maxWidth: 720, maxHeight: 540)
+                .frame(width: previewFrameSize.width, height: previewFrameSize.height)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .padding(16)
             }
