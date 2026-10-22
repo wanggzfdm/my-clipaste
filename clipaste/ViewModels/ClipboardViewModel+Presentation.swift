@@ -41,12 +41,12 @@ extension ClipboardViewModel {
         historyLoadTask?.cancel()
         historyLoadTask = nil
 
-        let visibleItems = displayedItemIDs.compactMap(item(for:))
+        let presentationWarmItems = Array(items.prefix(ClipboardHistoryWarmCache.defaultLimit))
         Task { @MainActor in
-            await ListRenderEngine.shared.prewarmTextPreviews(for: visibleItems)
+            await ListRenderEngine.shared.prewarmTextPreviews(for: presentationWarmItems)
         }
 
-        for item in visibleItems where item.contentType == .image {
+        for item in presentationWarmItems where item.contentType == .image {
             ClipboardImagePipeline.shared.prewarmThumbnail(for: item.id, maxPixelSize: 320)
         }
         // Retain the bounded first page and its rendered-text cache across normal hides.
