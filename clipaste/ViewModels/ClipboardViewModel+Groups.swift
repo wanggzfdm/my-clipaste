@@ -237,7 +237,7 @@ private extension ClipboardViewModel {
         selectedGroupId = groupID
         isScopeRefreshSuppressed = false
 
-        prepareAndCommitDisplayedScope(
+        commitDisplayedScope(
             groupId: groupID,
             typeFilter: filter,
             builtInGroup: builtInGroup,
@@ -245,7 +245,7 @@ private extension ClipboardViewModel {
         )
     }
 
-    func prepareAndCommitDisplayedScope(
+    private func commitDisplayedScope(
         groupId: String?,
         typeFilter: ClipboardContentType?,
         builtInGroup: ClipboardBuiltInGroup?,
@@ -270,28 +270,33 @@ private extension ClipboardViewModel {
         }
         let visibleItems = visibleIDs.compactMap(item(for:))
 
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            await ListRenderEngine.shared.prewarmTextPreviews(for: visibleItems)
-            for item in visibleItems where item.hasImagePreview || item.hasImageData {
-                _ = await ClipboardImagePipeline.shared.thumbnail(for: item.id, maxPixelSize: 720)
-            }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        transaction.animation = nil
+        withTransaction(transaction) {
+            applyDisplayedItemIDsIfChanged(visibleIDs)
+        }
+        performAsyncFilter(
+            query: activeSearchQuery,
+            items: items,
+            groupId: groupId,
+            typeFilter: typeFilter,
+            builtInGroup: builtInGroup
+        )
 
-            guard self.scopePresentationGeneration == generation else { return }
+        Task.detached(priority: .utility) { [weak self] in
+            await self?.prepareDisplayedScopeResources(visibleItems, generation: generation)
+        }
+    }
 
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            transaction.animation = nil
-            withTransaction(transaction) {
-                self.applyDisplayedItemIDsIfChanged(visibleIDs)
-            }
-            self.performAsyncFilter(
-                query: self.activeSearchQuery,
-                items: self.items,
-                groupId: groupId,
-                typeFilter: typeFilter,
-                builtInGroup: builtInGroup
-            )
+    func prepareDisplayedScopeResources(_ visibleItems: [ClipboardItem], generation: UInt) async {
+        guard scopePresentationGeneration == generation else { return }
+
+        let firstPageItems = Array(visibleItems.prefix(ClipboardHistoryWarmCache.defaultLimit))
+        await ListRenderEngine.shared.prewarmTextPreviews(for: firstPageItems)
+        for item in firstPageItems where item.hasImagePreview || item.hasImageData {
+            guard scopePresentationGeneration == generation else { return }
+            _ = await ClipboardImagePipeline.shared.thumbnail(for: item.id, maxPixelSize: 720)
         }
     }
 }
