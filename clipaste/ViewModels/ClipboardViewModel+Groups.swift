@@ -270,24 +270,85 @@ private extension ClipboardViewModel {
         }
         let visibleItems = visibleIDs.compactMap(item(for:))
 
+        let requiresDatabaseSnapshot = hasLoadedFullHistory == false && (groupId != nil || typeFilter != nil || builtInGroup != nil)
+        if requiresDatabaseSnapshot {
+            resolveScopeSnapshotBeforeCommit(
+                groupId: groupId,
+                typeFilter: typeFilter,
+                builtInGroup: builtInGroup,
+                generation: generation
+            )
+            return
+        }
+
+        commitResolvedScope(
+            resolvedIDs: visibleIDs,
+            resolvedItems: visibleItems,
+            generation: generation
+        )
+    }
+    private func resolveScopeSnapshotBeforeCommit(
+        groupId: String?,
+        typeFilter: ClipboardContentType?,
+        builtInGroup: ClipboardBuiltInGroup?,
+        generation: UInt
+    ) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let databaseItems = await StorageManager.shared.fetchItemsByScope(
+                groupId: groupId,
+                favoritesOnly: builtInGroup == .favorites,
+                typeFilterRawValue: typeFilter?.rawValue,
+                fetchLimit: 500,
+                offset: 0
+            )
+            guard self.scopePresentationGeneration == generation else { return }
+
+            let existingKeys = self.items.map {
+                ClipboardItemDeduplicationKey(id: $0.id, contentHash: $0.contentHash)
+            }
+            let candidateKeys = databaseItems.map {
+                ClipboardItemDeduplicationKey(id: $0.id, contentHash: $0.contentHash)
+            }
+            let newItems = ClipboardItemDeduplicationPolicy.uniqueAppendIndexes(
+                existing: existingKeys,
+                incoming: candidateKeys
+            ).map { databaseItems[$0] }
+            if !newItems.isEmpty {
+                self.isDisplayedScopeCommitSuppressed = true
+                self.mergeItems(newItems, prepend: false)
+                self.isDisplayedScopeCommitSuppressed = false
+            }
+
+            let resolvedIDs = databaseItems.map(\.id)
+            let resolvedItems = resolvedIDs.compactMap(self.item(for:))
+            self.commitResolvedScope(
+                resolvedIDs: resolvedIDs,
+                resolvedItems: resolvedItems,
+                generation: generation
+            )
+        }
+    }
+
+    private func commitResolvedScope(
+        resolvedIDs: [UUID],
+        resolvedItems: [ClipboardItem],
+        generation: UInt
+    ) {
+        guard scopePresentationGeneration == generation else { return }
+
         var transaction = Transaction()
         transaction.disablesAnimations = true
         transaction.animation = nil
         withTransaction(transaction) {
-            applyDisplayedItemIDsIfChanged(visibleIDs)
+            applyDisplayedItemIDsIfChanged(resolvedIDs)
         }
-        performAsyncFilter(
-            query: activeSearchQuery,
-            items: items,
-            groupId: groupId,
-            typeFilter: typeFilter,
-            builtInGroup: builtInGroup
-        )
 
         Task.detached(priority: .utility) { [weak self] in
-            await self?.prepareDisplayedScopeResources(visibleItems, generation: generation)
+            await self?.prepareDisplayedScopeResources(resolvedItems, generation: generation)
         }
     }
+
 
     func prepareDisplayedScopeResources(_ visibleItems: [ClipboardItem], generation: UInt) async {
         guard scopePresentationGeneration == generation else { return }

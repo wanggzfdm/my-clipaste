@@ -49,7 +49,7 @@ final class ClipboardViewModel {
     }
 
     var items: [ClipboardItem] = [] {
-        didSet { refreshFilterForDataOrScopeChange() }
+        didSet { if !isDisplayedScopeCommitSuppressed { refreshFilterForDataOrScopeChange() } }
     }
     var displayedItemIDs: [UUID] = []
     var displayedItemsCache: [ClipboardItem] = []
@@ -92,6 +92,7 @@ final class ClipboardViewModel {
     }
     var isScopeRefreshSuppressed = false
     var scopePresentationGeneration: UInt = 0
+    var isDisplayedScopeCommitSuppressed = false
     var draggedGroup: ClipboardGroupItem? = nil
     var titleEditorItem: ClipboardItem? = nil
     var quickPasteModifier: ModifierKey = ModifierKey.quickPastePreference()
@@ -136,6 +137,8 @@ final class ClipboardViewModel {
     var loadedHistoryCount = 0
     var hasLoadedFullHistory = false
     @ObservationIgnored nonisolated(unsafe) var historyLoadTask: Task<Void, Never>? = nil
+    @ObservationIgnored nonisolated(unsafe) var backgroundHistoryRefreshTask: Task<Void, Never>? = nil
+    var backgroundHistoryRefreshGeneration: UInt = 0
     var itemIndexByID: [UUID: Int] = [:]
     var itemIndexByHash: [String: Int] = [:]
     @ObservationIgnored nonisolated(unsafe) var operationNoticeHideTask: Task<Void, Never>? = nil

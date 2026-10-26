@@ -46,6 +46,10 @@ final class ClipboardImagePipeline {
         cache.removeAllObjects()
     }
 
+    func cachedThumbnail(for itemID: UUID, maxPixelSize: Int) -> NSImage? {
+        cache.object(forKey: "thumb-\(itemID.uuidString)-\(maxPixelSize)" as NSString)
+    }
+
     func thumbnail(for itemID: UUID, maxPixelSize: Int) async -> NSImage? {
         let cacheKey = "thumb-\(itemID.uuidString)-\(maxPixelSize)" as NSString
         if let cached = cache.object(forKey: cacheKey) {

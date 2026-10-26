@@ -54,6 +54,37 @@ extension ClipboardViewModel {
         needsReloadOnNextPresentation = false
     }
 
+    func refreshDataWhilePanelHidden() {
+        guard isPanelPresentationActive == false else { return }
+
+        backgroundHistoryRefreshGeneration &+= 1
+        let generation = backgroundHistoryRefreshGeneration
+        backgroundHistoryRefreshTask?.cancel()
+        backgroundHistoryRefreshTask = Task(priority: .utility) { [weak self] in
+            guard let self else { return }
+            let refreshedItems = await StorageManager.shared.fetchItemsPage(
+                searchText: "",
+                fetchLimit: Self.backgroundLoadMaxItems,
+                offset: 0
+            )
+            guard !Task.isCancelled,
+                  self.isPanelPresentationActive == false,
+                  self.backgroundHistoryRefreshGeneration == generation else {
+                return
+            }
+
+            self.applyLoadedItems(refreshedItems)
+            self.loadedHistoryCount = refreshedItems.count
+            self.hasLoadedFullHistory = ClipboardHistoryPagingState.isComplete(
+                count: refreshedItems.count,
+                limit: Self.backgroundLoadMaxItems
+            )
+            self.loadCustomGroups()
+            self.needsReloadOnNextPresentation = false
+            self.backgroundHistoryRefreshTask = nil
+        }
+    }
+
     func setupDataSubscriptions() {
         NotificationCenter.default.publisher(for: .clipboardDataDidChange)
             .receive(on: DispatchQueue.main)
@@ -61,6 +92,7 @@ extension ClipboardViewModel {
                 guard let self, self.hasPreparedPanelData else { return }
                 guard self.isPanelPresentationActive else {
                     self.needsReloadOnNextPresentation = true
+                    self.refreshDataWhilePanelHidden()
                     return
                 }
                 self.loadData(mode: .fullRefresh)

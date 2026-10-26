@@ -24,6 +24,7 @@ extension ClipboardViewModel {
                 return
             }
 
+            ClipboardMonitor.shared.isIgnoredNextChange = true
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
             pasteboard.setString(selection, forType: .string)

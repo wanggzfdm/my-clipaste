@@ -20,7 +20,7 @@ struct ClipboardThumbnailView<Placeholder: View>: View {
 
     var body: some View {
         Group {
-            if let image {
+            if let image = image ?? ClipboardImagePipeline.shared.cachedThumbnail(for: itemID, maxPixelSize: maxPixelSize) {
                 Image(nsImage: image)
                     .resizable()
                     .interpolation(.medium)

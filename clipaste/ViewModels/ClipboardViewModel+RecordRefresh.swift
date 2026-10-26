@@ -11,6 +11,7 @@ extension ClipboardViewModel {
                 guard let self, self.hasPreparedPanelData else { return }
                 guard self.isPanelPresentationActive else {
                     self.needsReloadOnNextPresentation = true
+                    self.refreshDataWhilePanelHidden()
                     return
                 }
 
