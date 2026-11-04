@@ -45,6 +45,32 @@ extension ClipboardViewModel {
         isQuickLookActive && !isAutomaticPreviewActive
     }
 
+    /// Returns the text currently selected inside the open QuickLook preview.
+    /// Prefers the view-model-mirrored selection, falling back to the live text view.
+    func selectedQuickLookText() -> String? {
+        if let stored = quickLookSelectedText, stored.isEmpty == false {
+            return stored
+        }
+
+        guard isQuickLookActive,
+              let textView = NSApp.keyWindow?.firstResponder as? NSTextView else {
+            return nil
+        }
+
+        let selectedRange = textView.selectedRange()
+        guard selectedRange.length > 0 else {
+            return nil
+        }
+
+        let text = textView.string as NSString
+        guard NSMaxRange(selectedRange) <= text.length else {
+            return nil
+        }
+
+        let selected = text.substring(with: selectedRange)
+        return selected.isEmpty ? nil : selected
+    }
+
     func matchesPanelShortcut(_ event: NSEvent, name: KeyboardShortcuts.Name) -> Bool {
         guard hasActiveTextInputResponder == false else {
             return false

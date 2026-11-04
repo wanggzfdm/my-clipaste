@@ -25,6 +25,8 @@ let sourcePaths = [
     "clipaste/Managers/ClipboardImagePipeline.swift",
     "clipaste/Managers/ClipboardPanelManager.swift",
     "clipaste/Managers/ClipboardRuntimeStore.swift",
+    "clipaste/ViewModels/ClipboardViewModel+Keyboard.swift",
+    "clipaste/ViewModels/ClipboardViewModel+KeyboardHelpers.swift",
 ]
 let source = try sourcePaths
     .map { try String(contentsOf: projectRoot.appendingPathComponent($0), encoding: .utf8) }
@@ -79,6 +81,17 @@ expectSourceContains("Task.sleep(for: .milliseconds(120))", "Quick Look selectio
 expectSourceContains("pasteboard.setString(selection, forType: .string)", "Quick Look text selection is written to the system pasteboard")
 expectSourceContains("self.quickLookSelectedText == selection", "stale Quick Look selection copy tasks cannot overwrite the latest selection")
 expectSourceContains("lastAutoCopiedQuickLookText = selection", "Quick Look tracks the latest automatically copied selection")
+expectSourceContains("if isQuickLookActive, let selectedText = selectedQuickLookText()", "Cmd+C inside Quick Look resolves the live preview selection")
+expectSourceContains("func selectedQuickLookText", "Quick Look exposes a helper that mirrors the preview selection")
+expectSourceContains("quickLookSelectedText, stored.isEmpty == false", "Quick Look reads the mirrored selection first, then falls back to the live text view")
+// Cmd+C must short-circuit to the preview selection before copySelection() can overwrite it with the full item.
+let keyboardSource = try String(contentsOf: projectRoot.appendingPathComponent("clipaste/ViewModels/ClipboardViewModel+Keyboard.swift"), encoding: .utf8)
+let quickLookShortcutIndex = keyboardSource.range(of: "if isQuickLookActive, let selectedText = selectedQuickLookText()")
+expect(quickLookShortcutIndex != nil, "Cmd+C Quick Look short-circuit is present")
+if let idx = quickLookShortcutIndex {
+    let copySelectionIndex = keyboardSource.range(of: "if copySelection()", range: idx.upperBound..<keyboardSource.endIndex)
+    expect(copySelectionIndex != nil, "Cmd+C short-circuit precedes copySelection()")
+}
 expectSourceContains("ClipboardMonitor.shared.isIgnoredNextChange = true", "Quick Look automatic selection copy is ignored by the clipboard capture monitor")
 expectSourceContains("ClipboardRuntimeBootstrapPolicy.resolve", "runtime store resolves persistent startup failures through the recovery policy")
 expect(!source.contains("currentRuntime = try! ClipboardModelContainerFactory.shared.makeRuntime()"), "runtime store never crashes on a persistent-store initialization error")

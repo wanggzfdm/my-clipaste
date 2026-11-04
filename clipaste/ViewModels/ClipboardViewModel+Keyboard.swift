@@ -222,10 +222,15 @@ extension ClipboardViewModel {
             return nil
         }
 
-        // Cmd+C to copy the selected item(s)
+        // Cmd+C to copy the selected item(s).
+        // QuickLook only supports select-to-copy (no full-item copy from preview chrome).
         if keyCode == 8, event.modifierFlags.contains(.command) {
             if hasActiveTextInputResponder {
                 return event
+            }
+            if isQuickLookActive, let selectedText = selectedQuickLookText(), selectedText.isEmpty == false {
+                // Selection is already mirrored to the pasteboard on change.
+                return nil
             }
             if copySelection() {
                 return nil
