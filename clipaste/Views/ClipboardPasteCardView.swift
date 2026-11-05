@@ -60,7 +60,8 @@ struct ClipboardPasteCardView: View, Equatable {
     }
 
     private var headerTextColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.96) : Color.primary.opacity(0.88)
+        // 标题文字与图标块同色系（header 亮色向白混合），更融合。
+        item.typeIconChipColor
     }
 
     private var headerTimestampText: String {
@@ -88,6 +89,7 @@ struct ClipboardPasteCardView: View, Equatable {
     private enum Layout {
         static let baseCardSize: CGFloat = 224
         static let cardSize = baseCardSize
+        static let cardHeight: CGFloat = 248
         /// Match on-screen card content; 2x retina headroom without over-decoding.
         static let thumbnailMaxPixelSize: Int = 320
         static let headerHeight: CGFloat = 44
@@ -116,7 +118,15 @@ struct ClipboardPasteCardView: View, Equatable {
     }
 
     private var headerSurfaceColor: Color {
-        Color(.sRGB, red: 0.02, green: 0.39, blue: 0.90, opacity: 1)
+        item.typeHeaderColor
+    }
+
+    private var headerGradientTop: Color {
+        item.typeHeaderGradient.top
+    }
+
+    private var headerGradientBottom: Color {
+        item.typeHeaderGradient.bottom
     }
 
     private var headerHighlightColor: Color {
@@ -167,7 +177,7 @@ struct ClipboardPasteCardView: View, Equatable {
                 .padding(.top, 8)
                 .padding(.bottom, 10)
         }
-        .frame(width: Layout.cardSize, height: Layout.cardSize)
+        .frame(width: Layout.cardSize, height: Layout.cardHeight)
         // 毛玻璃只由面板容器提供；逐卡片 NSVisualEffectView 会在横向滚动时放大 GPU 成本。
         .background {
             LiquidGlassSurface(cornerRadius: cardCornerRadius, isSelected: isSelected)
@@ -264,30 +274,21 @@ struct ClipboardPasteCardView: View, Equatable {
             .padding(.trailing, 64)
             .frame(height: headerHeight)
             .background {
-                ZStack {
-                    headerSurfaceColor
-
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.16),
-                            Color.clear,
-                            Color.black.opacity(0.12)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                }
+                LinearGradient(
+                    colors: [headerGradientTop, headerGradientBottom],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
             }
             .help(timestampHelpText)
 
+            // Paste 效果：无底块，应用图标本体直接嵌在 header 右侧，
+            // 尺寸撑满 header 高度、右缘贴卡片边，右上角由卡片圆角裁切。
             AppIconView(appBundleID: item.sourceBundleIdentifier, size: Layout.appIconSize)
-                .clipShape(.rect(cornerRadius: 12, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.white.opacity(colorScheme == .dark ? 0.16 : 0.22), lineWidth: 0.8)
-                }
-                .padding(.top, 4)
-                .padding(.trailing, 10)
+                // macOS 应用图标画布自带透明边距，适度放大让可见图标撑满 header。
+                .scaleEffect(1.15)
+                .frame(width: Layout.headerHeight + 2, height: Layout.headerHeight + 2)
+                .padding(.trailing, -2)
         }
         .frame(height: headerHeight)
         .frame(maxWidth: .infinity, alignment: .leading)

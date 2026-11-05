@@ -192,7 +192,9 @@ class ClipboardPanelManager {
         switch layout {
         case .horizontal:
             let full = screen.frame
-            let height: CGFloat = 315
+            // 顶部搜索栏 + verticalPadding*2 + 卡片高 (248) + 底部余量，
+            // 卡片加高后同步扩容，避免内容贴底。
+            let height: CGFloat = 339
             let usableWidth = full.width - Self.horizontalScreenInset * 2
             return NSRect(
                 x: full.minX + Self.horizontalScreenInset,
