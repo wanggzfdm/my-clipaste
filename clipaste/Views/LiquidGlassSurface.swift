@@ -24,11 +24,13 @@ struct LiquidGlassSurface: View {
 
             cardFill
 
+            // 仅保留顶部微弱高光提亮边缘，不再叠加底部黑色渐变：
+            // 卡片本体已是 94% 不透明的可读底色，底部黑渐变会让文字区
+            // 上亮下暗，观感发闷。
             LinearGradient(
                 colors: [
-                    Color.white.opacity(colorScheme == .dark ? 0.16 : 0.42),
-                    Color.clear,
-                    Color.black.opacity(colorScheme == .dark ? 0.10 : 0.04)
+                    Color.white.opacity(colorScheme == .dark ? 0.08 : 0.28),
+                    Color.clear
                 ],
                 startPoint: .top,
                 endPoint: .bottom
